@@ -2,8 +2,9 @@
 
 import socket
 import threading
-import time
 
+
+#TODO:  Read this https://www.geeksforgeeks.org/python-different-ways-to-kill-a-thread/
 class Server(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self) 
@@ -13,6 +14,14 @@ class Server(threading.Thread):
         self.size = 1024
         self.socket = None
         self.running = False
+        
+    def __del__(self):
+        print("Deleting cg3Dguru.com.server")
+        try:
+            self.socket.close()
+        except:
+            pass
+        
 
     def open_socket(self):
         try:
@@ -34,7 +43,7 @@ class Server(threading.Thread):
             client, address = self.socket.accept()
             data = client.recv(self.size)
             if data:
-                print(data.decode())
+                eval(data.decode())
 
             client.close() 
 
@@ -42,10 +51,12 @@ class Server(threading.Thread):
             self.socket.close()
 
 
-    def Stop(self):
+    def stop(self):
         self.running = False
         if self.socket:
             self.socket = None
+
+
 
 if __name__ == "__main__":
     s = Server()

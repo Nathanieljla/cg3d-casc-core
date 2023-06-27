@@ -9,6 +9,7 @@ class client(object):
     @staticmethod
     def log(message):
         s = None
+        success = False
         try:
             host = 'localhost'
             port = 50000
@@ -16,16 +17,19 @@ class client(object):
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.connect((host,port))
             s.send(message.encode())
-            return True
+            success = True
         except socket.error as e:
+            print ("Could not open socket: {}".format(e) )
+    
+            success = False
+        finally:
             if s:
                 s.close()
-            print ("Could not open socket: " + e)
-    
-            return False
-    
+                
+        return success
     
     
     
 if __name__ == '__main__':
-    client.log("this is data")
+    result = client.log("print('this is data')")
+    result
