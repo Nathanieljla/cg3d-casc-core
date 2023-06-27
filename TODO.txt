@@ -1,0 +1,1 @@
+add pywin32 to package dependencies.  NOTE : COM wont' work unless admin priveleges are granted at the time of the install
