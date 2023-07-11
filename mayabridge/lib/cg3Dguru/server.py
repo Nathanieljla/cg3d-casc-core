@@ -50,7 +50,7 @@ class Server(threading.Thread):
             client, address = self.socket.accept()
             data = client.recv(self.size)
             if data:
-                eval(data.decode())
+                exec(data.decode())
 
             client.close() 
 
