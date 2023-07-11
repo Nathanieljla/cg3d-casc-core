@@ -124,27 +124,19 @@ def send_to_csc(sendCode):
 
 
 
-def write_temp_file(language):
+def write_temp_file():
 	"""
-	Send the selected code to be executed in Maya
-
-	language : string : either 'mel' or 'python'
+	Send the selected code to be executed in Csc
 	"""
 
-
-	if language != "mel" and language != "python":
-		raise ValueError("Expecting either 'mel' or 'python'")
 
 	# Save the text to a temp file. If we're dealing with mel, make sure it
 	# ends with a semicolon, or Maya could become angered!
 	txt = getWingText()
-	if language == 'mel':
-		if not txt.endswith(';'):
-			txt += ';'
-	tempFile = os.path.join(os.environ['TMP'], 'wingData.txt')
-	f = open(tempFile, "wb")
+	temp_path = os.path.join(os.environ['TMP'], 'wingData.txt')
+	f = open(temp_path, "wb")
 	
-	print(tempFile)
+	print(temp_path)
 	#txt_unicode = uni(txt,'utf-8')
 	#txt_u8 = txt_unicode.encode('utf-8')
 	#f.write(txt_u8)
@@ -152,18 +144,21 @@ def write_temp_file(language):
 	f.write ( txt.encode() )
 
 	f.close()
+	
+	return temp_path
 
 
 #=============------------ myself mod ------------ =============#
 def highlight_to_csc():
 	"""auto to maya"""
+	#Update this to work with cascadeur -r arg
 	editor = wingapi.gApplication.GetActiveEditor()
 	doc = editor.GetDocument()
 	doctype = doc.GetMimeType()
 	
 	if 'text/x-python' in str(doctype):
-		write_temp_file('python')
-		sendCode = u'python("import cg3D.utils.execute_wing_code; cg3D.utils.execute_wing_code.main(\'python\')")' 
+		temp_path = write_temp_file()
+		sendCode = u'python("import cg3dguru.utils.execute_wing_code; cg3dguru.utils.execute_wing_code.read_file(file_path = {})")'.format(temp_path) 
 		
 	send_to_csc( sendCode )
 #=============------------ myself mod ------------ =============#
@@ -176,7 +171,7 @@ def import_in_csc():
 	doc_name, file_path = get_module_info()
 	file_path = file_path.replace("\\", "/") #mel doesn't like \
 	if doc_name:
-		send_code = u'python("import cg3D.utils.execute_wing_code; cg3D.utils.execute_wing_code.import_and_run(\'{0}\', file_path=\'{1}\')")'.format( doc_name, file_path)
+		send_code = u'python("import cg3dguru.utils.execute_wing_code; cg3dguru.utils.execute_wing_code.import_and_run(\'{0}\', file_path=\'{1}\')")'.format( doc_name, file_path)
 		print(send_code)
 		send_to_csc( send_code )
 	
