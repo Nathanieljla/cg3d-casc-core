@@ -60,8 +60,6 @@ class Server(threading.Thread):
 
     def stop(self):
         self.running = False
-        #if self.socket:
-            #self.socket = None
 
 
 

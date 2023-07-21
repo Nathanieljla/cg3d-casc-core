@@ -2,12 +2,12 @@
 
 
 def command_name():
-    return "3D Guru.wing"
+    return "Guru.wing"
 
 
 def run(scene):
     try:
-        import cg3Dguru.utils.wingdbstub
-        scene.error('import successful')
+        import cg3dguru.utils.wingdbstub
+        cg3dguru.utils.wingdbstub.Ensure()
     except:
         scene.error('import failed') 
