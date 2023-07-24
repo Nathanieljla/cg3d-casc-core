@@ -22,10 +22,10 @@ def get_temp_fbx_filename():
     return file_path
 
 
-def get_temp_commands():
+def get_temp_commmand_filename():
     temp_dir = tempfile.gettempdir()
-    file_path = os.path.join(temp_dir, 'temp_casc_commmand.py')
-    
+    file_path = os.path.join(temp_dir, 'csc_command_args.json')
+
     return file_path
 
 
@@ -45,16 +45,16 @@ def import_maya_qrig_file():
     rig_tool.generate_rig_elements()
     
 
-def import_maya_fbx_file(new_scene = False):
+def import_maya_fbx_file(new_scene=False, *args, **kwargs):
     fbx_file = get_temp_fbx_filename()
     if not os.path.exists(fbx_file):
         print('No FBX file found')
         return False
     
-    if new_scene:
-        cg3dguru.core.new_scene()
+    #if new_scene:
+        #cg3dguru.core.new_scene()
     
-    cg3dguru.core.import_fbx_model(fbx_file)
+    cg3dguru.core.import_fbx_model(fbx_file, new_scene)
     
     return True
     

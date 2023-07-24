@@ -16,6 +16,15 @@ try:
 except:
     #python3
     from importlib import reload
+    
+
+def get_temp_filename():
+    temp_dir = tempfile.gettempdir()
+    file_path = os.path.join(temp_dir, 'cascadeur_code.txt')
+
+    return file_path
+    
+    
 
 def import_and_run(module_name, file_path=''):
     print('\n')
@@ -31,23 +40,19 @@ def import_and_run(module_name, file_path=''):
                 print('loading module from path:{0}'.format(module_name))
                 read_file(file_path=file_path)
         
-    if module_name in sys.modules and hasattr(sys.modules[module_name], 'run'):
-        print('running module:{0}'.format(module_name))
-        sys.modules[module_name].run()    
+    #if module_name in sys.modules and hasattr(sys.modules[module_name], 'run'):
+        #print('running module:{0}'.format(module_name))
+        #sys.modules[module_name].run()    
 
 
 def read_file(file_path = ''):
-    """
-    Evaluate the temp file on disk, made by Wing, in Maya.
+    """Evaluate the python code from the input file path"""
 
-    codeType : string : Supports either 'python' or 'mel'
-    """
     print_lines = False
     if not file_path:
         # Cross-platform way to get a temp dir:
-        print_lines = True
-        tempDir = tempfile.gettempdir()        
-        file_path = os.path.join(tempDir, 'wingData.txt').replace("\\", "/")
+        print_lines = True      
+        file_path = get_temp_filename()
          
     print ("WING: executing code from file {}\n".format(file_path)) 
     if os.access(file_path , os.F_OK):

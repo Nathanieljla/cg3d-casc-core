@@ -2,7 +2,7 @@
 
 
 def command_name():
-    return "Guru.wing"
+    return "Guru.Connect to Wing"
 
 
 def run(scene):
@@ -10,4 +10,4 @@ def run(scene):
         import cg3dguru.utils.wingdbstub
         cg3dguru.utils.wingdbstub.Ensure()
     except:
-        scene.error('import failed') 
+        scene.error('Connection to wing failed.') 
