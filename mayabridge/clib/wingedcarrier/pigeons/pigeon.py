@@ -62,12 +62,31 @@ class Pigeon(object):
         else:
             print("No Wing-generated temp file exists: " + file_path)
             
+            
+    @classmethod
+    def post_module_import(cls, module):
+        """called if a Pigeon.import_module() is successful.
+        
+        The default behavior is to call the run() on the module if one
+        exists. Override this method in a sub-class if you have custom logic
+        for how you want what happens after a module has been
+        imported/reloaded.
+        
+        Args:
+            module : The module that was imported/reloaded from import_module()
+        """
+        if hasattr(module, 'run'):
+            module.run()
+            
+            
 
-    @staticmethod
-    def import_and_run(module_name, file_path):
+    @classmethod
+    def import_module(cls, module_name, file_path):
         """Attempts to import/reload the input module name and execute any run()
         
-        If importing/reloading fails, then the file path is read (if defined).
+        If importing/reloading fails, then the file path is read (if
+        defined). If sub-classes don't want to call run() they should
+        override post_module_import().
         
         Args:
             module_name (string) : The name of the module relative to any
@@ -86,11 +105,15 @@ class Pigeon(object):
                 importlib.import_module(module_name)
             except ModuleNotFoundError:
                 if file_path:
-                    Pigeon.read_file(file_path)
+                    cls.read_file(file_path)
 
-        if module_name in sys.modules and hasattr(sys.modules[module_name], 'run'):
-            print('calling run() in:{0}'.format(module_name))
-            sys.modules[module_name].run()
+
+        if module_name in sys.modules:
+            cls.post_module_import(sys.modules[module_name])
+            
+        #if module_name in sys.modules and hasattr(sys.modules[module_name], 'run'):
+            #print('calling run() in:{0}'.format(module_name))
+            #sys.modules[module_name].run()
     
     
 

@@ -80,67 +80,68 @@ class MayaPigeon(Pigeon):
       
 
     @staticmethod
-    def read_file(doc_type, file_path):
+    def read_file(file_path, doc_type=''):
         """
         Evaluate the temp file on disk, made by Wing, in Maya.
     
-        codeType : string : Supports either 'python' or 'mel'
+        Args:
+            file_path (str) : The absolute path to the file to load
+            doc_type (str) : Supports either 'python' or 'mel'
         """
-        print_lines = False
         
-        print("WING: executing code from file {}\n".format(file_path))
-        if os.access(file_path, os.F_OK):
-            if print_lines:
-                #temp data is likely highlighted code from Wing
-                #so let's print it for review.
-                with open(file_path, "rb") as f:
-                    for line in f.readlines():
-                        print (line.rstrip())
-                print ("\n"),
-    
-            if 'python' in doc_type:
-                # execute the file contents in Maya:            
-                with open(file_path , "rb") as f:
-                    data = f.read()
-                    data =  data.decode()
-                    exec(data, __main__.__dict__, __main__.__dict__)
-                    
-            elif 'mel' in doc_type:
-                melCmd = 'source "%s"'%file_path
+        print_lines = False
+        if not doc_type:
+            doc_type = 'python'
+            
+        if doc_type == 'python':
+            Pigeon.read_file(file_path)
+        else:
+            print("MayaPigeon : Running MEL code from file {}\n".format(file_path))
+            if os.access(file_path, os.F_OK):
+                if print_lines:
+                    #temp data is likely highlighted code from Wing
+                    #so let's print it for review.
+                    with open(file_path, "rb") as f:
+                        for line in f.readlines():
+                            print(line.rstrip())
+                    print("\n"),
+
+                melCmd = 'source "%s"' % file_path
                 # This causes the "// Result: " line to show up in the Script Editor:
                 om.MGlobal.executeCommand(melCmd, True, True)
-        else:
-            print("No Wing-generated temp file exists: " + file_path)
+            else:
+                print("No Wing-generated temp file exists: " + file_path)
             
 
-    @staticmethod
-    def import_and_run(module_name, file_path):
-        print('\n')
-        imported = module_name in sys.modules
-        if imported:
-            print('reloading module:{0}'.format(module_name))
-            importlib.reload(sys.modules[module_name])
-        else:
-            try:
-                print('Attempting module import of:{0}'.format(module_name))
-                importlib.import_module(module_name)
-            except ModuleNotFoundError:
-                if file_path:
-                    MayaPigeon.read_file('python', file_path)
+    #@staticmethod
+    #def import_module(module_name, file_path):
+        #print('\n')
+        #imported = module_name in sys.modules
+        #if imported:
+            #print('reloading module:{0}'.format(module_name))
+            #importlib.reload(sys.modules[module_name])
+        #else:
+            #try:
+                #print('Attempting module import of:{0}'.format(module_name))
+                #importlib.import_module(module_name)
+            #except ModuleNotFoundError:
+                #if file_path:
+                    #MayaPigeon.read_file(file_path)
 
-        if module_name in sys.modules and hasattr(sys.modules[module_name], 'run'):
-            print('calling run() in:{0}'.format(module_name))
-            sys.modules[module_name].run()
+        #if module_name in sys.modules and hasattr(sys.modules[module_name], 'run'):
+            #print('calling run() in:{0}'.format(module_name))
+            #sys.modules[module_name].run()
 
 
     @staticmethod
     def receive(module_path, doc_type, file_path):
         print("{} {} {}".format(module_path, doc_type, file_path))
         if not module_path:
-            MayaPigeon.read_file(doc_type, file_path)
+            MayaPigeon.read_file(file_path, doc_type=doc_type)
 
         elif 'python' in doc_type:
-            MayaPigeon.import_and_run(module_path, file_path)
+            MayaPigeon.import_module(module_path, file_path)
+
             
 
     def send(self, highlighted_text, module_path, file_path, doc_type):

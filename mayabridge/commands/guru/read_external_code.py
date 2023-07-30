@@ -2,6 +2,8 @@ import os
 import tempfile
 
 
+print("loading stuff")
+
 def command_name():
     return "Guru.Run Temp Code"
 
