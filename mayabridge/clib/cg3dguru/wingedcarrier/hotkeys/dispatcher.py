@@ -10,7 +10,6 @@ from pathlib import Path
 import wingapi
 
 
-
 print('User site:{}'.format(site.USER_SITE))
 
 
@@ -25,7 +24,7 @@ import psutil
 #we need to dynamically add our dispatchers package
 _file_path = os.path.dirname(__file__)
 _file_path = os.path.dirname(_file_path)
-#_file_path = os.path.join(_file_path, 'site-packages')
+
 if _file_path not in sys.path:
     sys.path.append(_file_path)
     
@@ -33,18 +32,30 @@ if _file_path not in sys.path:
 #if _file_path not in sys.path:
     #sys.path.append(_file_path)    
 
-import dispatchers
-import dispatchers.maya
+import pigeons
+import pigeons.maya
+import pgeons.cascadeur
 
 
-DISPATCHERS = [
-    dispatchers.maya.MayaDispatch()
+CARRIERS = [
+    pigeons.maya.MayaPigeon(),
+    pigeons.cascaduer.CascadeurPigeon()
 ]
+"""The global list of all carrier pigeons that can be dispatched
 
-  
-_ACTIVE_DISPATCHER : dispatchers.dispatcher.Dispatcher = None
+If a new Pigeon sub-class is created, it must also be added to this list to
+be used.
+"""
+
+_CLASS_INSTANCE_MAPPING = {item.__class__.__name__: item for item in CARRIERS}
+print(_CLASS_INSTANCE_MAPPING)
 
 
+_ACTIVE_CARRIER: pigeons.pigeon.Pigeon = None
+
+
+
+        
 def _get_document_text():
     """Based on the Wing API returns (selected text, doctype) """
     
@@ -99,28 +110,28 @@ def _get_module_info():
 
 
 def _find_process_owner(process):
-    global DISPATCHERS
+    global CARRIERS
 
     if _ACTIVE_DISPATCHER is None or not _ACTIVE_DISPATCHER.owns_process(process):
         _ACTIVE_DISPATCHER = None
         
-        for dis in DISPATCHERS:
+        for dis in CARRIERS:
             if dis.owns_process(process):  
                 _ACTIVE_DISPATCHER = dis
                 break
             
     #we'll always the last active dispatcher at the top of our dispatcher list
-    if _ACTIVE_DISPATCHER and DISPATCHERS[0] !=  _ACTIVE_DISPATCHER:
-        idx = DISPATCHERS.index(_ACTIVE_DISPATCHER)
-        DISPATCHERS.pop(idx)
-        DISPATCHERS.insert(0, _ACTIVE_DISPATCHER)
+    if _ACTIVE_DISPATCHER and CARRIERS[0] !=  _ACTIVE_DISPATCHER:
+        idx = CARRIERS.index(_ACTIVE_DISPATCHER)
+        CARRIERS.pop(idx)
+        CARRIERS.insert(0, _ACTIVE_DISPATCHER)
                 
 
 
 def _find_best_process():
     valid_dispatchers = []
     
-    for dis in DISPATCHERS:
+    for dis in CARRIERS:
         if dis.can_dispatch():
             valid_dispatchers.append(dis)
             
@@ -135,34 +146,66 @@ def _find_best_process():
 
 
 def _activate_by_process(process):
-    global _ACTIVE_DISPATCHER
     """If we're actively debugging try to find the process owner"""
-    #process = _get_debug_process()
+    global _ACTIVE_CARRIER
+
     if process:
         _find_process_owner(process)
     else:
-        _ACTIVE_DISPATCHER = None
+        _ACTIVE_CARRIER = None
         
         
 
-def dispatch():
-    global _ACTIVE_DISPATCHER
-    if not _ACTIVE_DISPATCHER:
-        #we dont' have an active dispatcher, so let's try to find one
-        _ACTIVE_DISPATCHER = _find_best_process()
-        
+def dispatch_carrier(carrier: pigeons.pigeon.Pigeon = None):
+    """Used to send the data to an external app via the active carrier
     
-    if _ACTIVE_DISPATCHER is not None:
+    When no carrier is provided the active carrier will be the last carrier
+    dispatched. When a new debug connection is established, that app pigeon
+    will automatically become the active carrier, until overridden by a user
+    specific hotkey such as dispactch_maya().
+    
+    If an active carrier doesn't exist, then the function will attempt to
+    find the best process to communicate with via Pigeon.can_dispatch()
+    
+    args:
+        carrier (Pigeon)(Optional) : a specific pigeon to become the active carrier
+        
+    """
+    global _ACTIVE_CARRIER
+
+    print("here")
+    if carrier:
+        _ACTIVE_CARRIER = carrier
+    
+    if _ACTIVE_CARRIER is None:
+        _ACTIVE_CARRIER = _find_best_process()
+        
+
+    if _ACTIVE_CARRIER is not None:
         highlighted_text, doc_type = _get_document_text()
         module_path, file_path = _get_module_info()
         file_path = file_path.replace("\\", "/")
         print('module path:{} full path:{}'.format(module_path, file_path))        
         
-        _ACTIVE_DISPATCHER.dispatch(highlighted_text, module_path, file_path, doc_type)
+        _ACTIVE_CARRIER.send(highlighted_text, module_path, file_path, doc_type)
     else:
         print("No application to dispatch to!")
         
+        
 
+def dispatch_maya():
+    dispatch_carrier(carrier=_CLASS_INSTANCE_MAPPING['MayaPigeon'])
+
+    
+
+def dispatch_cascadeur():
+    dispatch_carrier(carrier=_CLASS_INSTANCE_MAPPING['CascadeurPigeon'])
+        
+
+
+
+
+#-----------WIN-IDE signal slots for active debug is below this line--------------
       
 def _get_debug_process(current_run_state=None) -> psutil.Process:
     if current_run_state is None:
@@ -171,20 +214,17 @@ def _get_debug_process(current_run_state=None) -> psutil.Process:
 
     if not current_run_state:
         print("no debug run state found")
-        return
+        return None
     
     pid = current_run_state.GetProcessID()
     process: psutil.Process = psutil.Process(pid=pid)
     print('connected to PID:{}    name:{}    exe:{}'.format(process.pid, process.name(), process.exe()))
 
     return process
-        
-        
+
+
         
 def _debugger_connected(*args, **kwargs):
-    print("callback connected")
-    print(args)
-    
     if args:
         process = _get_debug_process(args[0])
         _activate_by_process(process)
@@ -194,15 +234,9 @@ def _debugger_connected(*args, **kwargs):
 def _debugger_changed(*args, **kwargs):
     if not args:
         _activate_by_process(None)
-    
-    print('current-runstate-changed')
-    print("callback changed")
-    print(args)
-    print(kwargs)
-        
-        
-        
-print("Connecting signals")
+
+
+
 debugger = wingapi.gApplication.GetDebugger()
 debugger.Connect('new-runstate', _debugger_connected)
 debugger.Connect('current-runstate-changed', _debugger_changed)
