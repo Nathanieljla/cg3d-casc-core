@@ -34,12 +34,12 @@ if _file_path not in sys.path:
 
 import pigeons
 import pigeons.maya
-import pgeons.cascadeur
+import pigeons.cascadeur
 
 
 CARRIERS = [
     pigeons.maya.MayaPigeon(),
-    pigeons.cascaduer.CascadeurPigeon()
+    pigeons.cascadeur.CascadeurPigeon()
 ]
 """The global list of all carrier pigeons that can be dispatched
 

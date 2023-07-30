@@ -1,6 +1,15 @@
 
 import subprocess
-import psutil
+
+psutil_exists = False
+try:
+    
+    import psutil
+    psutil_exists = True
+except:
+    print("Missing python package 'psutil'. CascadeurPigeon functionality limited to receiving")
+    pass
+
 
 from .pigeon import *
 
@@ -86,7 +95,7 @@ class CascadeurPigeon(Pigeon):
 
     def send(self, highlighted_text, module_path, file_path, doc_type):
         #put this after writing the file, so the code is ready to execute one casc is opened
-        exe_path = CascadeurPigeon.get_running_path()
+        exe_path = self.get_running_path()
         if not exe_path:
             print('No instances of cascadeur are running')
             return
@@ -104,6 +113,6 @@ class CascadeurPigeon(Pigeon):
     @staticmethod
     def receive(module_path, file_path):
         if not module_path:
-            CascadeurPigeon._read_file(file_path)
+            CascadeurPigeon.read_file(file_path)
         else:
-            CascadeurPigeon._import_and_run(module_path, file_path)
+            CascadeurPigeon.import_and_run(module_path, file_path)

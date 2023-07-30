@@ -7,9 +7,10 @@ def command_name():
 
 
 def run(scene):
-    """runs code from os.path.join(tempfile.gettempdir(), 'cascadeur_code.txt')"""
+    """Get the temp file of a cascadeur pigeon and execute it"""
     try:
-        import cg3dguru.utils.execute_wing_code
-        cg3dguru.utils.execute_wing_code.read_file()
-    except:
-        scene.error('Connection to wing failed.') 
+        import wingedcarrier.pigeons
+        temp_path = wingedcarrier.pigeons.CascadeurPigeon.get_temp_filepath()
+        wingedcarrier.pigeons.CascadeurPigeon.read_file(temp_path)
+    except Exception as e:
+        scene.error('Reading temp file failed. Exception {}'.format(e))

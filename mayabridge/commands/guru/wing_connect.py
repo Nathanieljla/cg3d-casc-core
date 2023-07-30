@@ -7,7 +7,7 @@ def command_name():
 
 def run(scene):
     try:
-        import cg3dguru.utils.wingdbstub
-        cg3dguru.utils.wingdbstub.Ensure()
+        import wingedcarrier.wingdbstub
+        wingedcarrier.wingdbstub.Ensure()
     except:
         scene.error('Connection to wing failed.') 
