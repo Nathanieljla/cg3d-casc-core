@@ -20,6 +20,6 @@ def run(scene):
         args = data['args']
         kwargs = data['kwargs']
     
-    imported = cg3dguru.maya.core.import_maya_fbx_file(**kwargs)
+    imported = cg3dguru.maya.core.import_maya_fbx_model(**kwargs)
     if imported:
         cg3dguru.maya.core.import_maya_qrig_file()

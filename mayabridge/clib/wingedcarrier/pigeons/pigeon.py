@@ -7,6 +7,7 @@ class Pigeon(object):
     def __init__(self, *args, **kwargs):
         pass
     
+    
     @classmethod
     def get_temp_filename(cls):
         """the name of the temporary file wing will use in write_temp_file()
@@ -16,11 +17,13 @@ class Pigeon(object):
         """
         return('wing_output_text.txt')
     
+    
 
     @classmethod
     def get_temp_filepath(cls):
         """Returns the full path of the temp file on the local system."""
         return os.path.join(os.environ['TMP'], cls.get_temp_filename())
+
 
 
     @classmethod
@@ -40,7 +43,8 @@ class Pigeon(object):
 
         temp_path = temp_path.replace("\\", "/")
         return temp_path
-
+    
+    
 
     @staticmethod
     def read_file(file_path):
@@ -57,10 +61,11 @@ class Pigeon(object):
             with open(file_path, "rb") as f:
                 data = f.read()
                 data = data.decode()
-                exec(data, __main__.__dict__, __main__.__dict__)
+                exec(data, __main__.__dict__, __main__.__dict__) 
 
         else:
             print("No Wing-generated temp file exists: " + file_path)
+            
             
             
     @classmethod
@@ -110,10 +115,6 @@ class Pigeon(object):
 
         if module_name in sys.modules:
             cls.post_module_import(sys.modules[module_name])
-            
-        #if module_name in sys.modules and hasattr(sys.modules[module_name], 'run'):
-            #print('calling run() in:{0}'.format(module_name))
-            #sys.modules[module_name].run()
     
     
 
@@ -127,7 +128,7 @@ class Pigeon(object):
     
     
     def owns_process(self, process):
-        """Returns true if the process is the pigeons target application
+        """Returns true if the process is the pigeon's target application
         
         This is used when an external application is connects to wing. When True
         is returned the Dispatcher becomes the active dispatcher to send commands
@@ -144,6 +145,15 @@ class Pigeon(object):
         
         sub-classes should override this with application specfic logic for how
         the data is sent to an external application.        
+        """
+        raise NotImplementedError
+    
+    
+    def send_python_command(self, command_string):
+        """Send a custom python command to the target application
+        
+        Returns:
+            bool : True if the command was successfully sent.        
         """
         raise NotImplementedError
 

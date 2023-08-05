@@ -8,6 +8,8 @@ import rig_mode.off as rm_off
 
 import cg3dguru.core
 
+
+
 def get_temp_qrig_filename():
     temp_dir = tempfile.gettempdir()
     file_path = os.path.join(temp_dir, 'hik_to_.qrigcasc')
@@ -45,7 +47,7 @@ def import_maya_qrig_file():
     rig_tool.generate_rig_elements()
     
 
-def import_maya_fbx_file(new_scene=False, *args, **kwargs):
+def import_maya_fbx_model(new_scene=False, *args, **kwargs):
     fbx_file = get_temp_fbx_filename()
     if not os.path.exists(fbx_file):
         print('No FBX file found')
@@ -57,6 +59,28 @@ def import_maya_fbx_file(new_scene=False, *args, **kwargs):
     cg3dguru.core.import_fbx_model(fbx_file, new_scene)
     
     return True
+
+
+
+def import_maya_fbx_animation():
+    fbx_file = get_temp_fbx_filename()
+    if not os.path.exists(fbx_file):
+        print('No FBX file found')
+        return False
+    
+    #if new_scene:
+        #cg3dguru.core.new_scene()
+    
+    cg3dguru.core.import_fbx_animation(fbx_file)
+    
+    return True
+
+
+
+
+def export_maya_fbx_animation():
+    import wingedcarrier.pigeons
+    maya =  wingedcarrier.pigeons.MayaPigeon()    
     
     
     

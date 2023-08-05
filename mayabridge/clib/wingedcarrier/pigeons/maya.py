@@ -79,8 +79,8 @@ class MayaPigeon(Pigeon):
         return 'maya' in process.name()
       
 
-    @staticmethod
-    def read_file(file_path, doc_type=''):
+    @classmethod
+    def read_file(cls, file_path, doc_type=''):
         """
         Evaluate the temp file on disk, made by Wing, in Maya.
     
@@ -94,7 +94,8 @@ class MayaPigeon(Pigeon):
             doc_type = 'python'
             
         if doc_type == 'python':
-            Pigeon.read_file(file_path)
+            super(MayaPigeon, cls).read_file(file_path)
+            #Pigeon.read_file(file_path)
         else:
             print("MayaPigeon : Running MEL code from file {}\n".format(file_path))
             if os.access(file_path, os.F_OK):
@@ -133,14 +134,14 @@ class MayaPigeon(Pigeon):
             #sys.modules[module_name].run()
 
 
-    @staticmethod
-    def receive(module_path, doc_type, file_path):
+    @classmethod
+    def receive(cls, module_path, doc_type, file_path):
         print("{} {} {}".format(module_path, doc_type, file_path))
         if not module_path:
-            MayaPigeon.read_file(file_path, doc_type=doc_type)
+            cls.read_file(file_path, doc_type=doc_type)
 
         elif 'python' in doc_type:
-            MayaPigeon.import_module(module_path, file_path)
+            cls.import_module(module_path, file_path)
 
             
 
@@ -163,7 +164,8 @@ class MayaPigeon(Pigeon):
             file_path = self.write_temp_file(highlighted_text)
 
         try:
-            command = u'python("import wingedcarrier.pigeons; wingedcarrier.pigeons.MayaPigeon.receive(\'{}\',\'{}\',\'{}\')")'.format(module_path, doc_type, file_path)
+            #command = u'python("import wingedcarrier.pigeons; wingedcarrier.pigeons.MayaPigeon.receive(\'{}\',\'{}\',\'{}\')")'.format(module_path, doc_type, file_path)
+            command = u"import wingedcarrier.pigeons; wingedcarrier.pigeons.MayaPigeon.receive(\'{}\',\'{}\',\'{}\')".format(module_path, doc_type, file_path)
             print(command)
             m_socket.send(command.encode())
         except Exception as e:
@@ -171,5 +173,24 @@ class MayaPigeon(Pigeon):
             
         finally:
             m_socket.close()
-
+            
+            
+            
+    def send_python_command(self, command_string):
+        m_socket = self.get_socket()
+        if m_socket is None:
+            print("Can't connect to Maya!")
+            return False
+        
+        success = False
+        try:
+            #command = u'python("{}")'.format(command_string)
+            m_socket.send(command_string.encode())
+            success = True
+        except Exception as e:
+            print("Maya socket errored:{}".format(e))
+        finally:
+            m_socket.close()
+              
+        return success
 

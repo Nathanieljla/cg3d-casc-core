@@ -48,14 +48,13 @@ be used.
 """
 
 _CLASS_INSTANCE_MAPPING = {item.__class__.__name__: item for item in CARRIERS}
-print(_CLASS_INSTANCE_MAPPING)
-
 
 _ACTIVE_CARRIER: pigeons.pigeon.Pigeon = None
 
+_DEBUG_CARRIER: pigeons.pigeon.Pigeon = None
 
 
-        
+
 def _get_document_text():
     """Based on the Wing API returns (selected text, doctype) """
     
@@ -111,20 +110,27 @@ def _get_module_info():
 
 def _find_process_owner(process):
     global CARRIERS
-
-    if _ACTIVE_DISPATCHER is None or not _ACTIVE_DISPATCHER.owns_process(process):
-        _ACTIVE_DISPATCHER = None
-        
-        for dis in CARRIERS:
-            if dis.owns_process(process):  
-                _ACTIVE_DISPATCHER = dis
-                break
+    
+    for dis in CARRIERS:
+        if dis.owns_process(process):  
+            return dis
             
-    #we'll always the last active dispatcher at the top of our dispatcher list
-    if _ACTIVE_DISPATCHER and CARRIERS[0] !=  _ACTIVE_DISPATCHER:
-        idx = CARRIERS.index(_ACTIVE_DISPATCHER)
-        CARRIERS.pop(idx)
-        CARRIERS.insert(0, _ACTIVE_DISPATCHER)
+    return None  
+    
+
+    #if _ACTIVE_DISPATCHER is None or not _ACTIVE_DISPATCHER.owns_process(process):
+        #_ACTIVE_DISPATCHER = None
+        
+        #for dis in CARRIERS:
+            #if dis.owns_process(process):  
+                #_ACTIVE_DISPATCHER = dis
+                #break
+            
+    ##we'll always the last active dispatcher at the top of our dispatcher list
+    #if _ACTIVE_DISPATCHER and CARRIERS[0] !=  _ACTIVE_DISPATCHER:
+        #idx = CARRIERS.index(_ACTIVE_DISPATCHER)
+        #CARRIERS.pop(idx)
+        #CARRIERS.insert(0, _ACTIVE_DISPATCHER)
                 
 
 
@@ -145,43 +151,62 @@ def _find_best_process():
 
 
 
-def _activate_by_process(process):
-    """If we're actively debugging try to find the process owner"""
-    global _ACTIVE_CARRIER
+#def _activate_by_process(process):
+    #"""If we're actively debugging try to find the process owner"""
+    #global _ACTIVE_CARRIER
 
-    if process:
-        _find_process_owner(process)
-    else:
-        _ACTIVE_CARRIER = None
+    #if process:
+        #_find_process_owner(process)
+    #else:
+        #_ACTIVE_CARRIER = None
         
         
 
 def dispatch_carrier(carrier: pigeons.pigeon.Pigeon = None):
-    """Used to send the data to an external app via the active carrier
+    """Used to send the data to an external app based on a set of rules.
     
-    When no carrier is provided the active carrier will be the last carrier
-    dispatched. When a new debug connection is established, that app pigeon
-    will automatically become the active carrier, until overridden by a user
-    specific hotkey such as dispactch_maya().
+    When no carrier is provided the target carrier will be the last carrier
+    dispatched. To provide a carrier use disptach methods such as
+    dispatch_maya() or dispatch_cascadeur().
     
-    If an active carrier doesn't exist, then the function will attempt to
-    find the best process to communicate with via Pigeon.can_dispatch()
+    When a debug connection is established that app's pigeon
+    will take priority while connected (if no carrier is provided) otherwise
+    the last active carrier will be used.
+    
+    If no carrier can be determined (or the previous carrier is no longer
+    valid) then the function will attempt to find the best process to
+    communicate with via Pigeon.can_dispatch().
     
     args:
         carrier (Pigeon)(Optional) : a specific pigeon to become the active carrier
-        
     """
-    global _ACTIVE_CARRIER
-
-    print("here")
-    if carrier:
-        _ACTIVE_CARRIER = carrier
+    global CARRIERS, _ACTIVE_CARRIER, _DEBUG_CARRIER
     
-    if _ACTIVE_CARRIER is None:
+    target_carrier = None
+    if carrier is None:
+        if _DEBUG_CARRIER:
+            target_carrier = _DEBUG_CARRIER
+        else:
+            target_carrier = _ACTIVE_CARRIER
+    else:
+        _ACTIVE_CARRIER = carrier
+        target_carrier = _ACTIVE_CARRIER
+     
+    #A previously valid carrier now might not be valid, so it's
+    #ensure our target is good and replace it if not.
+    if not target_carrier or not target_carrier.can_dispatch():
         _ACTIVE_CARRIER = _find_best_process()
+        target_carrier = _ACTIVE_CARRIER
         
-
-    if _ACTIVE_CARRIER is not None:
+    #We'll always move the last valid carrier to the top of the list
+    #so it have priority when searching for a new carrier.
+    if target_carrier and CARRIERS[0] != target_carrier:
+        idx = CARRIERS.index(target_carrier)
+        CARRIERS.pop(idx)
+        CARRIERS.insert(0, target_carrier)
+        
+        
+    if target_carrier is not None:
         highlighted_text, doc_type = _get_document_text()
         module_path, file_path = _get_module_info()
         file_path = file_path.replace("\\", "/")
@@ -218,22 +243,25 @@ def _get_debug_process(current_run_state=None) -> psutil.Process:
     
     pid = current_run_state.GetProcessID()
     process: psutil.Process = psutil.Process(pid=pid)
-    print('connected to PID:{}    name:{}    exe:{}'.format(process.pid, process.name(), process.exe()))
+    print('connected to PID:{}   name:{}   exe:{}'.format(process.pid, process.name(), process.exe()))
 
     return process
 
 
         
 def _debugger_connected(*args, **kwargs):
+    global _DEBUG_CARRIER
     if args:
         process = _get_debug_process(args[0])
-        _activate_by_process(process)
+        _DEBUG_CARRIER = _find_process_owner(process)
+        #_activate_by_process(process)
 
 
     
 def _debugger_changed(*args, **kwargs):
+    global _DEBUG_CARRIER
     if not args:
-        _activate_by_process(None)
+        _DEBUG_CARRIER = None #_activate_by_process(None)
 
 
 
