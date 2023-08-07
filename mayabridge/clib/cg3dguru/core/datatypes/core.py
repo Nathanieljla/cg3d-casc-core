@@ -3,6 +3,51 @@ from enum import Enum
 import csc
 
 
+
+
+class CscWrapper(object):
+    def __init__(self, viewer):
+        super().__init__()
+        
+        self._viewer = viewer
+        
+        
+    @staticmethod
+    def _class_to_guid(input_args):
+        arg_list = list(input_args)
+        
+        return [value.guid if isinstance(value, PyGuid) else value for value in arg_list]
+    
+    
+    #@staticmethod
+    #def _guid_to_class(value):
+        #pass
+    
+    
+    #@staticmethod
+    #def _convert_result(result):
+        #if isinstance(result, csc.Guid):
+            #if result.is_null():
+                #return None
+            #else:
+                #return CscWrapper._guid_to_class(result)
+        
+
+    def __getattr__(self, attr):
+        if hasattr(self._viewer, attr):
+            def func_wrapper(*args, **kwargs):
+                args = CscWrapper._class_to_guid(args)
+                func = getattr(self._viewer, attr)
+                #result = func(*args, **kwargs)
+                #return CscWrapper._convert_result(result)
+                return func(*args, **kwargs)
+                
+            return func_wrapper
+        
+        return AttributeError(attr)
+
+
+
 class PyGuid(object):
     """Base class for wrappping csc.Guid and all sub-classes"""
     
@@ -28,8 +73,11 @@ class PyGuid(object):
             return False
         
     
-    def is_null(self):
-        return self.guid.is_null()
+    def __getattr__(self, attr):
+        if hasattr(self.guid, attr):
+            return getattr(self.guid, attr)
+        
+        raise AttributeError(attr)   
     
     
     
@@ -163,10 +211,27 @@ class PyObject(PyGuid):
         self.Basic.parent.set(value)
     
     
+    @staticmethod
+    def get_behaviour_name(behaviour_id, b_viewer: csc.model.BehaviourViewer, m_viewer: csc.model.DataViewer):
+        """Returns a tuple of the behaviour name and if the behaviour is Dynamic"""
+        name = b_viewer.get_behaviour_name(behaviour_id)
+        
+        is_dynamic = name == 'Dynamic'
+        if is_dynamic:
+            data_guid = b_viewer.get_behaviour_data(behaviour_id, 'behaviourName')
+            name = m_viewer.get_data_value(data_guid)
+            
+        return (name, is_dynamic)
+    
+    
+    
     def __getattr__(self, attr):
         behaviours = self.get_behaviours(attr)
         if not behaviours:
-            raise BehaviourError(attr)
+            try:
+                return super().__getattr__(attr)
+            Exception: 
+                raise BehaviourError(attr)
         elif len(behaviours) > 1:
             raise BehaviourSizeError(self.name, attr)
         
@@ -178,12 +243,14 @@ class PyObject(PyGuid):
         
         behaviours = self.behaviour_viewer.get_behaviours(self.guid)
         for guid in behaviours:
-            name = self.behaviour_viewer.get_behaviour_name(guid)
+            name, is_dynamic = self.get_behaviour_name(guid, self.behaviour_viewer, self.data_viewer)
+     
+            #name = self.behaviour_viewer.get_behaviour_name(guid)
             
-            is_dynamic = name == 'Dynamic'
-            if name == 'Dynamic':
-                data_guid = self.behaviour_viewer.get_behaviour_data(guid, 'behaviourName')
-                name = self.data_viewer.get_data_value(data_guid)
+            #is_dynamic = name == 'Dynamic'
+            #if name == 'Dynamic':
+                #data_guid = self.behaviour_viewer.get_behaviour_data(guid, 'behaviourName')
+                #name = self.data_viewer.get_data_value(data_guid)
                     
             behaviour = PyBehaviour(name, is_dynamic, guid, self)
             if name in self._behaviours_cache:
@@ -323,6 +390,9 @@ class PyBehaviour(PyGuid, SceneInterface):
             
             
     def __getattr__(self, attr):
+        if hasattr(self.behaviour_viewer, attr):
+            return getattr(self.behaviour_viewer, attr)
+        
         result = self._get_data(attr)
         if result:
             return result
@@ -436,10 +506,10 @@ class PyAttrObject(PyAttribute):
 
 
     def get(self):
-        object_id: csc.Guid = self.behaviour_viewer.get_behaviour_object(self.behaviour.guid, self.name)
+        #object_id: csc.Guid = self.behaviour_viewer.get_behaviour_object(self.behaviour.guid, self.name)
         
-        if not object_id.is_null():
-            return PyObject(object_id, self.scene)
+        if not self.guid.is_null():
+            return PyObject(self.guid, self.scene)
         
         return None
     
@@ -456,16 +526,18 @@ class PyAttrObject(PyAttribute):
     
     
 class PyAttrRef(PyAttribute):
-    """Represents behaviour data that stores references"""
+    """Represents behaviour data that stores references to other behaviours"""
     
     def __init__(self, *args, **kwargs):
         super(PyAttrRef, self).__init__( *args, **kwargs)
 
 
     def get(self):
-        object_id = self.behaviour_viewer.get_behaviour_owner(self.guid)
-        
-        return PyObject(object_id, self.scene)
+        if not self.guid.is_null():
+            name, is_dynamic = PyObject.get_behaviour_name(self.guid, self.behaviour_viewer, self.data_viewer)
+                        
+            return PyBehaviour(name, is_dynamic, self.guid, self.behaviour.get_behaviour_owner(self.guid))
+
     
     
     
