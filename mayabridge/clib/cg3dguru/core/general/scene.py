@@ -25,7 +25,7 @@ def get_current_scene():
 
 
 def get_scene_objects(names = [], selected = False, of_type = ''):
-    def _get_by_name(model_viwer, names):
+    def _get_by_name(model_viewer, names):
         found_guids = []
         if names:
             for name in names:

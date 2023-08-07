@@ -7,7 +7,7 @@ from . import scene
 class FbxFilterType(Enum):
     SCENE = 0
     MODEL = 1
-    ANIM = 2
+    ANIMATION = 2
     SELECTED = 3
     FRAMES = 4
 
@@ -52,7 +52,7 @@ def import_fbx(file_path: str, import_filter: FbxFilterType, new_scene: bool=Fal
         method = loader.import_scene    
     elif import_filter == FbxFilterType.MODEL:
         method = loader.import_model
-    elif import_filter == FbxFilterType.ANIM:
+    elif import_filter == FbxFilterType.ANIMATION:
         method = loader.import_animation
     elif import_filter == FbxFilterType.SELECTED:
         method = loader.import_animation_to_selected_objects
@@ -80,7 +80,7 @@ def export_fbx(file_path: str, export_filter: FbxFilterType):
         method = loader.export_model
     elif export_filter == FbxFilterType.SELECTED:
         method = loader.export_scene_selected
-    elif export_filter == FbxFilterType.ANIM:
+    elif export_filter == FbxFilterType.ANIMATION:
         method = loader.export_joints
     else:
         raise ValueError("Invalid export_filter value: {}".format(export_filter))

@@ -10,6 +10,10 @@ def command_name():
 
 def run(scene):
     """Get the temp file of a cascadeur pigeon and execute it"""
+    #import wingedcarrier.pigeons
+    #temp_path = wingedcarrier.pigeons.CascadeurPigeon.get_temp_filepath()
+    #wingedcarrier.pigeons.CascadeurPigeon.read_file(temp_path)    
+
     try:
         import wingedcarrier.pigeons
         temp_path = wingedcarrier.pigeons.CascadeurPigeon.get_temp_filepath()

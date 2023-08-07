@@ -56,7 +56,7 @@ def import_maya_fbx_model(new_scene=False, *args, **kwargs):
     #if new_scene:
         #cg3dguru.core.new_scene()
     
-    cg3dguru.core.import_fbx_model(fbx_file, new_scene)
+    cg3dguru.core.import_fbx(fbx_file, cg3dguru.core.FbxFilterType.MODEL, new_scene)
     
     return True
 
@@ -71,7 +71,7 @@ def import_maya_fbx_animation():
     #if new_scene:
         #cg3dguru.core.new_scene()
     
-    cg3dguru.core.import_fbx_animation(fbx_file)
+    cg3dguru.core.import_fbx(fbx_file, cg3dguru.core.FbxFilterType.ANIMATION)
     
     return True
 
