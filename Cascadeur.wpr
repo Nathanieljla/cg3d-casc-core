@@ -15,5 +15,11 @@ proj.directory-list = [{'dirloc': loc('.'),
                         'filter': '*',
                         'include_hidden': False,
                         'recursive': True,
+                        'watch_for_changes': True},
+                       {'dirloc': loc('../../cascadeur_internal_builds/cascadeur_07_17_2023/python/Lib/site-packages/cg3dguru'),
+                        'excludes': (),
+                        'filter': '*',
+                        'include_hidden': False,
+                        'recursive': True,
                         'watch_for_changes': True}]
 proj.file-type = 'shared'

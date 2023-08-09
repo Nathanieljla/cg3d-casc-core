@@ -1,3 +1,4 @@
+from __future__ import annotations #used so type hints are resolved after all content is read
 
 import csc
 
@@ -17,10 +18,11 @@ def new_scene():
 
 
 
-def get_current_scene():
+def get_current_scene()-> cg3dguru.core.datatypes.PyScene:
     """Get the current scene"""
     scene_manager = csc.app.get_application().get_scene_manager()
-    return scene_manager.current_scene()
+    scene = scene_manager.current_scene()
+    return cg3dguru.core.datatypes.PyScene.wrap(scene, None)
 
 
 
@@ -37,31 +39,66 @@ def get_scene_objects(names = [], selected = False, of_type = ''):
     
     
     current_scene = get_current_scene()
-    domain_scene = current_scene.domain_scene()
-    model_viewer = domain_scene.model_viewer()
+    domain_scene = current_scene.dom_scene
+    model_viewer = domain_scene.mod_viewer
     name_list = []
     
     if selected:
-        object_ids = domain_scene.selector().selected().ids
+        found_objects = domain_scene.selector().selected().ids
         if names:
             name_list = _get_by_name(model_viewer, names)
     elif names:
-        object_ids = _get_by_name(model_viewer, names)
+        found_objects = _get_by_name(model_viewer, names)
     else:
-        object_ids = model_viewer.get_objects()
+        found_objects = model_viewer.get_objects()
 
     
     if name_list:
         set_a = set(name_list)
-        set_b = set(object_ids)
+        set_b = set(found_objects)
         
         set_b.intersection_update(set_a)
-        object_ids = list(set_b)
+        found_objects = list(set_b)
         
         
     if of_type:
-        object_ids = [guid for guid in object_ids if model_viewer.get_object_type_name(guid) == of_type]
+        found_objects = [obj for obj in found_objects if model_viewer.get_object_type_name(obj) == of_type]
         
         
-    return [cg3dguru.core.datatypes.PyObject(guid, current_scene) for guid in object_ids]
+    return found_objects #[cg3dguru.core.datatypes.PyObject(guid, current_scene) for guid in found_objects]    
+    
+    
+    
+    
+    
+    
+    
+    #current_scene = get_current_scene()
+    #domain_scene = current_scene.domain_scene()
+    #model_viewer = domain_scene.model_viewer()
+    #name_list = []
+    
+    #if selected:
+        #object_ids = domain_scene.selector().selected().ids
+        #if names:
+            #name_list = _get_by_name(model_viewer, names)
+    #elif names:
+        #object_ids = _get_by_name(model_viewer, names)
+    #else:
+        #object_ids = model_viewer.get_objects()
+
+    
+    #if name_list:
+        #set_a = set(name_list)
+        #set_b = set(object_ids)
+        
+        #set_b.intersection_update(set_a)
+        #object_ids = list(set_b)
+        
+        
+    #if of_type:
+        #object_ids = [guid for guid in object_ids if model_viewer.get_object_type_name(guid) == of_type]
+        
+        
+    #return [cg3dguru.core.datatypes.PyObject(guid, current_scene) for guid in object_ids]
     
