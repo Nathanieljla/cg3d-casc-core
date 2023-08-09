@@ -123,7 +123,7 @@ class CscWrapper(object):
     
         
     @staticmethod
-    def wrap(data: object, container: object) -> CscWrapper:
+    def wrap(data: object, container: object, default_class = None) -> CscWrapper:
         """Takes the data and returns an instance of CscWrapper
         
         Argg:
@@ -162,6 +162,8 @@ class CscWrapper(object):
             return DataViewer(data, container)
         elif isinstance(data, csc.layers.Viewer):
             return LayersViewer(data, container)
+        elif default_class is not None:
+            return default_class(data, container)
         else:
             #can't wrap this with anything
             print("Can't wrap:{}".format(data.__class__))
@@ -258,7 +260,48 @@ class SceneRoot(CscWrapper):
         """Returns the DataViewer"""
         #this property name is abbreviated to avoid conflicts with the csc
         #api function name data_viewer.
-        return self._root.dv   
+        return self._root.dv
+    
+    @property
+    def mod_editor(self):
+        """Returns the active model editor
+        
+        This will only be valid during the call to self.scene.edit()
+        """
+        return self._root.me
+    
+    @property
+    def beh_editor(self):
+        """Returns the active behaviour editor
+        
+        This will only be valid during the call to self.scene.edit()
+        """
+        return self._root.be
+    
+    @property
+    def dat_editor(self):
+        """Returns the active data editor
+        
+        This will only be valid during the call to self.scene.edit()
+        """
+        return self._root.de
+    
+    @property
+    def update_editor(self):
+        """Returns the active update editor
+        
+        This will only be valid during the call to self.scene.edit()
+        """
+        return self._root.ue
+    
+    @property
+    def scene_updater(self):
+        """Returns the active scene editor
+        
+        This will only be valid during the call to self.scene.edit()
+        """
+        return self._root.su
+
     
     
     
@@ -274,12 +317,54 @@ class PyScene(SceneRoot):
         self.bv = self.ds.behaviour_viewer()
         self.dv = self.ds.data_viewer()
         
+        self._editing = False
         self.me = None
         self.be = None
-        self.dv = None
+        self.de = None
+        self.ue = None
+        self.se = None        
+        
+        
+    def _start_editing(self, model_editor, update_editor, scene_updater):
+        self._editing = True
+        self.me = CscWrapper(model_editor, None)
+        self.ue = CscWrapper(update_editor, None)
+        self.su = CscWrapper(scene_updater, None)
+        self.be = CscWrapper(model_editor.behaviour_editor(), None)
+        self.de = CscWrapper(model_editor.data_editor(), None)
+        
+
+    def _stop_editing(self):
+        self._editing = False
+        self.me = self.ue = self.su = self.be = self.de = None
+        
+        
+    def edit(self, title, func, *args, **kwargs):
+        """Provides access to the domain_scene.editors and updaters
+        
+        If an edit isn't in process then an undo operation is started else
+        the title is ignored and the input fuction is called. Any arguments
+        that you need to pass into your func can be included when calling
+        edit(). For Example:
+        
+        edit('example', myFunc, param1, param2=True)
+        Args:
+            title (str): The title of the undo operation
+            func: the function or method to run after the editors are accessible 
+        """
+        
+        def mod(model_editor, update_editor, scene_updater):
+            self._start_editing(model_editor, update_editor, scene_updater)
+            func(*args, **kwargs)
+            self._stop_editing()
+        
+        if self._editing:
+            func(*args, **kwargs)
+        else:
+            self.ds.modify_update(title, mod)            
+            
+              
                   
-        
-        
 class PyGuid(SceneRoot):
     """Base class for wrappping csc.Guid and all Ids"""
 
@@ -321,6 +406,13 @@ class PyObject(PyGuid):
     
     @name.setter
     def name(self, value):
+        def _set():
+            self.mod_editor.set_object_name(self, value)
+        
+        title = "Set name".format(value)
+        self.scene.edit(title, _set)           
+        
+        
         pass
         #def mod(model_editor, update_editor, scene_updater):
             #model_editor.set_object_name(self.csc_handle, value)
@@ -577,6 +669,14 @@ class AttrData(Attr):
         
         
     #def set(self, value):
+        #if value is None:
+            #value = PyObject(csc.model.ObjectId.null(), self.scene)        
+
+        #def _set():
+            #self.beh_editor.set_behaviour_field_value(self.behaviour, self.name, value)
+        
+        #title = "Set {}.{}".format(self.behaviour.name, self.name)
+        #self.scene.edit(title, _set)    
         
         
         
@@ -592,21 +692,17 @@ class AttrObject(Attr):
             return None
         
         return PyObject(self._data, self.scene)
+
+
+    def set(self, value: PyObject|None):
+        if value is None:
+            value = PyObject(csc.model.ObjectId.null(), self.scene)        
+
+        def _set():
+            self.beh_editor.set_behaviour_model_object(self.behaviour, self.name, value)
         
-        #if not self.csc_handle.is_null():
-            #return PyObject(self.csc_handle, self.root)
-        
-        #return None
-    
-    
-    #def set(self, value: PyGuid):
-        #if value is None:
-            #value = PyGuid(csc.model.ObjectId.null(), None)
-        
-        #def mod(model_editor, update_editor, scene_updater):
-            #model_editor.behaviour_editor().set_behaviour_model_object(self.behaviour.csc_handle, self.name, value.csc_handle)
-        
-        #self.domain_scene.modify_update("Set {}.{}".format(self.behaviour.name, self.name), mod)        
+        title = "Set {}.{}".format(self.behaviour.name, self.name)
+        self.scene.edit(title, _set)     
     
     
     
@@ -660,7 +756,7 @@ class DataViewer(GuidMapper):
         
 
 class DomainScene(GuidMapper):
-    guid_class = PyBehaviour
+    guid_class = None
     
         
         

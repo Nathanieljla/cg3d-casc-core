@@ -19,6 +19,9 @@ def run():
         basic = results[0].Basic
         attr = basic.parent
         print(attr)
+        
+        results[0].parent = results[1]
+        results[0].name = "New Name"
     
     
         
