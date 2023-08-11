@@ -1,6 +1,10 @@
 from __future__ import annotations #used so I don't have to forward declare classes for type hints
 
+# https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_google.html
+
+
 from enum import Enum
+import typing
 
 import csc
 
@@ -43,8 +47,8 @@ class BehaviourSizeError(Exception):
         
         
         
-class AttrError(Exception):
-    """Thrown when a PyBehaviour doesn't have a attribute of a given name
+class PropertyError(Exception):
+    """Thrown when a PyBehaviour doesn't have a property of a given name
     
     If PySettings.attribute_name doesn't exist, this will be thrown.
     """
@@ -70,32 +74,32 @@ class CscWrapper(object):
         if isinstance(data, CscWrapper):
             data = data.unwrap()
         
-        self._data = data
-        self._container = container
+        self.__data = data
+        self.__container = container
         
         
     def __repr__(self):
-        return "{}: {}".format(self.__class__.__name__, self._data.__class__.__name__)
+        return "{}: {}".format(self.__class__.__name__, self.__data.__class__.__name__)
 
     
     def __eq__(self, other):
         if isinstance(other, CscWrapper):
-            return ((self._data == other._data))
+            return ((self.__data == other.__data))
         else:
             return False
         
         
     def __hash__(self):
-        return self._data.__hash__()
+        return self.__data.__hash__()
     
     
     def __getattr__(self, attr):
-        if hasattr(self._data, attr):
+        if hasattr(self.__data, attr):
             def func_wrapper(*args, **kwargs):
                 args = self.unwrap_list(args)
                 CscWrapper.unwrap_dict(kwargs)
                 
-                func = getattr(self._data, attr)
+                func = getattr(self.__data, attr)
                 result = func(*args, **kwargs)
                 
                 return self._wrap_result(result)
@@ -126,7 +130,7 @@ class CscWrapper(object):
     def wrap(data: object, container: object, default_class = None) -> CscWrapper:
         """Takes the data and returns an instance of CscWrapper
         
-        Argg:
+        Args:
             data: The data to wrap
             container: The owner of the data. None is a valid value.
         """
@@ -137,13 +141,19 @@ class CscWrapper(object):
                 return None
             elif isinstance(data, csc.model.ObjectId):
                 return PyObject(data, container)
+            
             elif isinstance(data, csc.model.DataId):
-                return AttrData('', data, container)
+                return DataProperty('', data, container)
+            
+            elif isinstance(data, csc.model.SettingId):
+                return SettingProperty('', data, container)
+            
             elif isinstance(data, csc.Guid):
                 if isinstance(container, GuidMapper) and container.guid_class is not None:
                     return container.guid_class(data, container)
                 else:
-                    return PyGuid(data, container)  
+                    return PyGuid(data, container)
+                
             else:
                 #can't wrap this with anything
                 print("Can't wrap:{}".format(data))
@@ -152,36 +162,43 @@ class CscWrapper(object):
         #if we don't have a guid let's see if this is another type of csc object.
         elif isinstance(data, csc.view.Scene):
             return PyScene(data, container)
+        
         elif isinstance(data, csc.domain.Scene):
             return DomainScene(data, container)
+        
         elif isinstance(data, csc.model.BehaviourViewer):
             return BehaviourViewer(data, container)
+        
         elif isinstance(data, csc.model.ModelViewer):
             return ModelViewer(data, container)
+        
         elif isinstance(data, csc.model.DataViewer):
             return DataViewer(data, container)
+        
         elif isinstance(data, csc.layers.Viewer):
             return LayersViewer(data, container)
+        
         elif default_class is not None:
             return default_class(data, container)
+        
         else:
             #can't wrap this with anything
-            print("Can't wrap:{}".format(data.__class__))
+            #print("Can't wrap:{}".format(data.__class__))
             return data
         
         
     @property
     def container(self):
-        return self._container
+        return self.__container
     
     
     def replace_data(self, data):
         """Directly replace the underlying content that is wrapped"""
-        self._data = data
+        self.__data = data
    
               
     def unwrap(self):
-        return self._data
+        return self.__data
                        
                
     def _wrap(self, csc_handle):
@@ -198,9 +215,6 @@ class CscWrapper(object):
             return CscWrapper.wrap(result, self)
 
 
-
-    
-    
 
 class SceneRoot(CscWrapper):
     """Base class used to represent any wrapped data existing/related to a scene
@@ -368,7 +382,6 @@ class PyScene(SceneRoot):
 class PyGuid(SceneRoot):
     """Base class for wrappping csc.Guid and all Ids"""
 
-    
     def __init__(self, *args, **kwargs):
         #call objects.__init__ so it plays nice with mixins
         super(PyGuid, self).__init__(*args, **kwargs)
@@ -378,7 +391,6 @@ class PyGuid(SceneRoot):
 class PyObject(PyGuid):
     """Wrapper around ccs.model.ObjectId"""
 
-        
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
@@ -388,14 +400,14 @@ class PyObject(PyGuid):
     def __str__(self):
         #return "{}->{} : {}-> {}".format(self.__class__.__name__, self.name, self.csc_handle.__class__.__name__, self.csc_handle.to_string())
         guid = ''
-        if self._data:
-            guid = self._data.to_string()
+        if self.unwrap():
+            guid = self.unwrap().to_string()
         
         return "{}->{}->{}".format(self.__class__.__name__, self.name, guid)
         
 
     def __getattr__(self, attr):
-        return getattr(self._data, attr)
+        return getattr(self.unwrap(), attr)
 
     
     @property
@@ -406,18 +418,12 @@ class PyObject(PyGuid):
     
     @name.setter
     def name(self, value):
+        """Set the name of the object"""
         def _set():
             self.mod_editor.set_object_name(self, value)
         
         title = "Set name".format(value)
-        self.scene.edit(title, _set)           
-        
-        
-        pass
-        #def mod(model_editor, update_editor, scene_updater):
-            #model_editor.set_object_name(self.csc_handle, value)
-        
-        #self.domain_scene.modify_update("Rename {}".format(self.name), mod)
+        self.scene.edit(title, _set)
         
         
     @property
@@ -428,36 +434,51 @@ class PyObject(PyGuid):
     
     @property
     def parent(self):
-        return self.Basic.parent.get() #self.Basic.parent.get()  #self.behaviour_viewer.get_behaviour_object(self.basic.guid, 'parent')
+        """Get's the 'Basic' behaviour parent property value"""
+        return self.Basic.parent.get()
     
     
     @parent.setter
     def parent(self, value):
         self.Basic.parent.set(value)
+        
+
+    def get_behaviours(self):
+        return self.beh_viewer.get_behaviours(self)
     
+    
+    def get_behaviours_by_name(self, behaviour_name) -> list:
+        """Returns a list of all the behaviours that match the input name"""
+        
+        if self.has_behaviour(behaviour_name):
+            return self._behaviours_cache[behaviour_name]
+        
+        return []
+    
+    
+    def get_behaviour_by_name(self, name) -> PyBehaviour | None:
+        """Returns the PyBehaviour that matches the given input name
+        
+        raises:
+            BehaviourSizeError: If more than one behaviour of the given name
+            exists.
+        """
+        behaviours = self.get_behaviours_by_name(name)
+        if not behaviours:
+            return None
+        
+        elif len(behaviours) > 1:
+            raise BehaviourSizeError(self.name, name)
+        
+        return behaviours[0] 
+      
         
     def __getattr__(self, attr):
-        #try:
-            #return super().__getattribute__(attr) #getattr(super(), attr)
-        #except AttributeError: 
-            #behaviours = self.get_behaviours_by_name(attr)
-            #if not behaviours:
-                #raise BehaviourError(attr)   
-            #elif len(behaviours) > 1:
-                #raise BehaviourSizeError(self.name, attr)
-        
-        #return behaviours[0]        
-        
-        behaviours = self.get_behaviours_by_name(attr)
-        if not behaviours:
-            try:
-                return super().__getattr__(attr)
-            except AttributeError: 
-                raise BehaviourError(attr)
-        elif len(behaviours) > 1:
-            raise BehaviourSizeError(self.name, attr)
-        
-        return behaviours[0]
+        result = self.get_behaviour_by_name(attr)
+        if result:
+            return result
+        else:
+            raise BehaviourError(attr)
     
     
     def _cache_behaviours(self):
@@ -472,43 +493,16 @@ class PyObject(PyGuid):
 
             
     def has_behaviour(self, behaviour_name) -> bool:
-        """Returns true if a behaviour of the given name exists
+        """Returns true if a behaviour of the given name exists"""
         
-        If a requested behaviour is missing the internal behaviour cache is
-        rebuild before validating the missing data.
-        """
+        #If a requested behaviour is missing the internal behaviour cache is
+        #rebuild before validating the missing data.
         
         if behaviour_name not in self._behaviours_cache:
             self._cache_behaviours()
             
         return behaviour_name in self._behaviours_cache
-    
-    
-    def get_behaviours_by_name(self, behaviour_name) -> list:
-        """Returns a list of all the behaviours that match the input name"""
-        
-        if self.has_behaviour(behaviour_name):
-            return self._behaviours_cache[behaviour_name]
-        
-        return []
-        
-
-
-class Settings(object):
-    """Used to access behaviour attributes of type settings"""
-    
-    def __init__(self, behaviour: PyBehaviour, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        
-        self.behaviour = behaviour
-        
-    def __getattr__(self, attr):
-        try:
-            data_id = self.behaviour_viewer.get_behaviour_setting(self.behaviour._data, attr)
-            return AttrSettings(attr, data_id, self)
-        except:
-            raise AttrError(self.behaviour.name, attr)      
-
+ 
 
 
 class PyBehaviour(PyGuid):
@@ -517,25 +511,37 @@ class PyBehaviour(PyGuid):
     def __init__(self, *args, **kwargs):
         super(PyBehaviour, self).__init__(*args, **kwargs)
             
-        self.name, self.is_dynamic = self.get_behaviour_name(self, self.beh_viewer, self.mod_viewer)
-        self._settings = None
-        
+        self._name, self.is_dynamic = self.get_behaviour_name(self, self.beh_viewer, self.dat_viewer)
+    
         
     @property
-    def settings(self):
-        if self._settings is None:
-            self._settings =  Settings(self)
-        
-        return self._settings
+    def name(self):
+        """The name of the behaviour"""
+        return self._get_dynamic_name()
+
             
     @property
     def object(self):
+        """Returns the object the behaviour is attached to"""
         return self.container
     
     
+    def _get_dynamic_name(self):
+        if not self.is_dynamic:
+            return self._name
+        else:
+            data_attr = self.get_data('behaviourName')
+            data_attr.name = 'behaviourName'
+            return self.dat_viewer.get_data_value(data_attr)
+    
+    
     @staticmethod
-    def get_behaviour_name(behaviour_id: PyGuid, b_viewer: BehaviourViewer, m_viewer: DataViewer):
-        """Returns a tuple of the behaviour name and if the behaviour is Dynamic"""
+    def get_behaviour_name(behaviour_id: PyGuid, b_viewer: BehaviourViewer, d_viewer: DataViewer):
+        """Returns a tuple of the behaviour name and if the behaviour is dynamic
+        
+        When the behaviour is dynamic behaviour.behaviourName is returned
+        instead of 'Dynamic'
+        """
         
         name = b_viewer.get_behaviour_name(behaviour_id)
         
@@ -543,40 +549,72 @@ class PyBehaviour(PyGuid):
         if is_dynamic:
             data_attr = b_viewer.get_behaviour_data(behaviour_id, 'behaviourName')
             data_attr.name = 'behaviourName'
-            name = m_viewer.get_data_value(data_attr)
+            name = d_viewer.get_data_value(data_attr)
             
         return (name, is_dynamic)
     
     
-    def _get_data(self, attr):
+    def _get_data(self, prop_name):
         try:
-            dat_attr = self.beh_viewer.get_behaviour_data(self, attr)
-            dat_attr.name = attr
+            #The CscWrapper returns a SettingProperty without the name
+            dat_attr = self.get_data(prop_name)
+            dat_attr.name = prop_name
             return dat_attr
         except:
-            return None
+            try:
+                data_list = self.get_data_range(prop_name)
+                return DataProperty(prop_name, data_list, self)
+            except:
+                pass
+                
+        return None
         
-        
-    def _get_object(self, attr):
+
+    def _get_setting(self, prop_name):
         try:
-            result_object = self.beh_viewer.get_behaviour_object(self, attr)
-            return AttrObject(attr, result_object, self)
+            #The CscWrapper returns a SettingProperty without the name
+            setting_attr = self.get_setting(prop_name)
+            setting_attr.name = prop_name
+            return setting_attr
         except:
-            return None
+            try:
+                settings_list = self.get_settings_range(prop_name)
+                return SettingProperty(prop_name, settings_list, self)
+            except:
+                pass
         
-        
-    def _get_reference(self, attr):
+        return None          
+
+                
+    def _get_object(self, prop_name):
         try:
-            result_ref = self.beh_viewer.get_behaviour_reference(self, attr)
-            return AttrRef(attr, result_ref, self)
+            result_object = self.get_object(prop_name)
+            return ObjectProperty(prop_name, result_object, self)
         except:
-            return None
-            
+            try:
+                object_list = self.get_objects_range(prop_name)
+                return ObjectProperty(prop_name, object_list, self)
+            except:
+                pass
+                        
+        return None
+        
+        
+    def _get_reference(self, prop_name):
+        try:
+            result_ref = self.get_reference(prop_name)
+            return ReferenceProperty(prop_name, result_ref, self)
+        except:
+            try:
+                ref_list = self.get_reference_range(prop_name)
+                return ReferenceProperty(prop_name, ref_list, self)
+            except:
+                pass
+                
+        return None
+        
             
     def __getattr__(self, attr):
-        if hasattr(self.beh_viewer, attr):
-            return getattr(self.beh_viewer, attr)
-        
         result = self._get_data(attr)
         if result:
             return result
@@ -589,10 +627,57 @@ class PyBehaviour(PyGuid):
         if result:
             return result
         
-        raise AttrError(self.name, attr)
+        result = self._get_setting(attr)
+        if result:
+            return result
+        
+        raise PropertyError(self.name, attr) 
+        
     
+    def get_name(self) -> str:
+        return self.beh_viewer.get_behaviour_name(self)
+        
+    def get_owner(self) -> PyObject | None:
+        return self.beh_viewer.get_behaviour_owner(self)
 
+    def get_data(self, name):
+        return self.beh_viewer.get_behaviour_data(self, name)
     
+    def get_data_range(self, name):
+        return self.beh_viewer.get_behaviour_data_range(self, name)
+    
+    def get_setting(self, name):
+        return self.beh_viewer.get_behaviour_setting(self, name)
+    
+    def get_settings_range(self, name):
+        return self.beh_viewer.get_behaviour_settings_range(self, name)    
+
+    def get_object(self, name) -> PyObject:
+        return self.beh_viewer.get_behaviour_object(self, name)
+    
+    def get_objects_range(self, name) -> typing.List[PyObject]:
+        return self.beh_viewer.get_behaviour_objects_range(self, name)
+        
+    def get_reference(self, name) -> PyBehaviour:
+        return self.beh_viewer.get_behaviour_reference(self, name)
+    
+    def get_reference_range(self, name) -> typing.List[PyBehaviour]:
+        return self.beh_viewer.get_behaviour_reference_range(self, name)
+    
+    def is_hidden(self) -> bool:
+        return self.beh_viewer.is_hidden(self)
+    
+    def get_property_names(self):
+        return self.beh_viewer.get_behaviour_property_names(self)
+    
+    def get_property(self, name):
+        property_names = self.get_property_names()
+
+        try:
+            idx = property_names.index(name)
+            return self.__getattr__(property_names[idx])
+        except:
+            return None         
     
     
     
@@ -602,16 +687,18 @@ class PyLayer(PyGuid):
         
     
     
-class Attr(PyGuid):
+class Property(PyGuid):
     """Base class for any Behaviour attribute"""
     
     def __init__(self, name, *args, **kwargs):
-        #args = list(args)
+        super(Property, self).__init__(*args, **kwargs)
+        
         self._name = name
         
-        super(Attr, self).__init__(*args, **kwargs)
-
-        
+    @property
+    def is_range(self):
+        return isinstance(self.unwrap(), list)
+                
         
     def get(self):
         """get the data associated with the attribute"""
@@ -629,11 +716,9 @@ class Attr(PyGuid):
     def name(self):
         return self._name
     
-    
     @name.setter
     def name(self, name):
         self._name = name
-
 
     @property
     def behaviour(self):
@@ -641,21 +726,22 @@ class Attr(PyGuid):
     
    
   
-class AttrData(Attr):
-    """Wrapper around ccs.model.DataId that are part of a behaviour"""
+class DataProperty(Property):
+    """Represents behaviour.properties that store csc.model.Data(s)"""
+
     
     def __init__(self, *args, **kwargs): #name: str, attr_type: AttrType, guid: csc.model.DataId, behaviour: PyBehaviour):
-        super(AttrData, self).__init__( *args, **kwargs) #name, attr_type, guid, behaviour)    
+        super(DataProperty, self).__init__( *args, **kwargs) #name, attr_type, guid, behaviour)    
 
         #TODO: will a data guid always safely return data?
         try:
-            self._data = self.dat_viewer.get_data(self.unwrap())
+            self.__data = self.dat_viewer.get_data(self) #.unwrap())
         except:
-            self._data = None
+            self.__data = None
             
     
     def is_animateable(self):
-        return self._data is not None and self._data.mode == csc.model.DataMode.Animation
+        return self.__data is not None and self.__data.mode == csc.model.DataMode.Animation
     
     
     def get(self, frame = -1):
@@ -663,9 +749,9 @@ class AttrData(Attr):
             if frame < 0:
                 frame = self.domain_scene.get_current_frame()
                 
-            return self.dat_viewer.get_data_value(self._data, frame) 
+            return self.dat_viewer.get_data_value(self, frame) 
         else:
-            return self.dat_viewer.get_data_value(self._data)
+            return self.dat_viewer.get_data_value(self)
         
         
     #def set(self, value):
@@ -680,19 +766,59 @@ class AttrData(Attr):
         
         
         
-class AttrObject(Attr):
-    """Represents behaviour data that maps to objects"""
+class SettingProperty(Property):
+    """Represents behaviour.properties that store csc.model.Settings(s)"""
+    
+    def __init__(self, *args, **kwargs):
+        super(SettingProperty, self).__init__( *args, **kwargs)
+        
+        #TODO: will a data guid always safely return data?
+        try:
+            self.__data = self.dat_viewer.get_setting(self) #.unwrap())
+        except:
+            self.__data = None
+            
+            
+    def is_animateable(self):
+        return self.__data is not None and self.__data.mode == csc.model.SettingMode.Animation
+
+
+    def get(self, frame = -1):
+        if self.is_animateable():
+            if frame < 0:
+                frame = self.domain_scene.get_current_frame()
+                
+            return self.dat_viewer.get_setting_value(self, frame) 
+        else:
+            return self.dat_viewer.get_setting_value(self)  
+        
+        
+        
+class ObjectProperty(Property):
+    """Represents behaviour.properties that maps to object(s)"""
         
     def __init__(self, *args, **kwargs):
-        super(AttrObject, self).__init__( *args, **kwargs)
+        super(ObjectProperty, self).__init__( *args, **kwargs)
 
 
-    def get(self):
-        if self._data is None:
-            return None
+    def __get(self, value):
+        return PyObject(value, self.scene)
+
+
+    def get(self) -> PyObject | typing.List[PyObject] | None:
+        """returns the PyObject stored by the property
         
-        return PyObject(self._data, self.scene)
-
+        When is_range = True, a list of results is returned.        
+        """
+        
+        content = self.unwrap()
+        if content is None:
+            return None
+        elif isinstance(content, list):
+            return [self.__get(value) for value in content]
+        else:
+            return self.__get(content)
+        
 
     def set(self, value: PyObject|None):
         if value is None:
@@ -706,34 +832,36 @@ class AttrObject(Attr):
     
     
     
-class AttrRef(Attr):
-    """Represents behaviour data that stores references to other behaviours"""
+class ReferenceProperty(Property):
+    """Represents behaviour.properties that map to other behaviour(s)"""
     
     def __init__(self, *args, **kwargs):
-        super(AttrRef, self).__init__( *args, **kwargs)
+        super(ReferenceProperty, self).__init__( *args, **kwargs)
+        
+        
+    def __get(self, value):
+        #we need to access the global behaviour viewer to find out what
+        #behaviour owns the reference.
+        behaviour_owner = self.behaviour.beh_viewer.get_behaviour_owner(value)
+        return PyBehaviour(value, behaviour_owner)
 
 
-    def get(self):
-        pass
-        #if not self.csc_handle.is_null():
-            #name, is_dynamic = PyObject.get_behaviour_name(self.csc_handle, self.behaviour_viewer, self.data_viewer)
-                        
-            #return PyBehaviour(name, is_dynamic, self.csc_handle, self.behaviour.get_behaviour_owner(self.csc_handle))
+    def get(self) -> PyBehaviour | typing.List[PyBehaviour] | None:
+        """returns the PyBehaviour stored by the property
+        
+        When is_range = True, a list of results is returned.        
+        """
+        
+        content = self.unwrap()
+        if content is None:
+            return None
+        elif isinstance(content, list):
+            return [self.__get(value) for value in content]
+        else:
+            return self.__get(content)
 
-    
-    
-class AttrSettings(Attr):
-    """Represents behaviour data that's stored in the settings"""
-    
-    def __init__(self, *args, **kwargs):
-        super(AttrSettings, self).__init__( *args, **kwargs)
 
 
-    def get(self):
-        return self.dat_viewer.get_setting_value(self)
-    
-    
-    
 class GuidMapper(SceneRoot):
     """Used to wrap a generic csc.Guid to a specific class"""
     guid_class = None    
