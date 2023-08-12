@@ -13,8 +13,8 @@ def print_behavior_names(behaviour_viewer, guids):
     
 def run():
     #Rename and parent object
-    current_scene = scene.get_current_scene()
-    print(current_scene.get_animation_size())
+    #current_scene = scene.get_current_scene()
+    #current_scene.create_object('MyObject')
     
     results = scene.get_scene_objects(names=['sphere', 'plane'])
     if results:
@@ -25,7 +25,7 @@ def run():
         else:
             results[0].parent = None
             
-        #results[0].name = "New Name"        
+        results[0].name = "New Name"        
     
         #basic = results[0].Basic
         #basic.parent.set(results[1])

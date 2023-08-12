@@ -13,6 +13,22 @@ import csc
 ###---Exceptions
 ################
 
+class EditorError(Exception):
+    """Thrown when someone attempts to access and editor at an invalid time
+    
+    The SceneElement properties 'mod_editor, 'beh_editor', 'dat_editor',
+    'update_editor', scene_updater, and 'session' should only be accessed
+    after SceneElement.edit has been called and inside of the assigned
+    callback. Outside of this condition an error is raised.    
+    """
+    def __init__(self, editor_name, message=''):
+        if not message:
+            message = "{} can't be accessed outside of call to PyScene.edit".format(editor_name)
+            
+        super().__init__(message)
+        
+    
+
 class BehaviourError(Exception):
     """Thrown when a PyObject doesn't have a behaviour of a given name
     
@@ -35,8 +51,8 @@ class BehaviourSizeError(Exception):
     behaviour of the given name exists, this error will be thrown.
     
     In these cases code should probably be refactored to call
-    object.get_behaviours(behaviour_name) instead. This allows users to
-    examine and determine the right instance to use.
+    object.get_behaviours_by_name(behaviour_name) instead. This programmers
+    users to examine and determine the right instance to use.
     """
     
     def __init__(self, object_name, behaviour_name, message=''):
@@ -50,7 +66,7 @@ class BehaviourSizeError(Exception):
 class PropertyError(Exception):
     """Thrown when a PyBehaviour doesn't have a property of a given name
     
-    If PySettings.attribute_name doesn't exist, this will be thrown.
+    If PyBehaviour.attribute_name doesn't exist, this will be thrown.
     """
     
     def __init__(self, behaviour_name, attr_name, message=''):
@@ -66,19 +82,17 @@ class PropertyError(Exception):
 #################
 
 
-
 class CscWrapper(object):
-    def __init__(self, data, container, *args, **kwargs):
+    def __init__(self, data, creator, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
         if isinstance(data, CscWrapper):
             data = data.unwrap()
         
         self.__data = data
-        self.__container = container
+        self.__creator = creator
 
-        
-        
+         
     def __repr__(self):
         return "{}: {}".format(self.__class__.__name__, self.__data.__class__.__name__)
 
@@ -112,7 +126,7 @@ class CscWrapper(object):
                 
     @staticmethod
     def unwrap_list(in_list):
-        """Replace all CscWrappers elements with their csc_handle"""
+        """Replace all CscWrappers elements with their underlying data"""
         
         if isinstance(in_list, tuple):
             in_list = list(in_list)
@@ -122,18 +136,19 @@ class CscWrapper(object):
     
     @staticmethod
     def unwrap_dict(in_dict):
+        """Replace all CscWrappers elements with their underlying data"""
         for key, value in in_dict.items():
             if isinstance(value, CscWrapper):
                 in_dict[key] = value.unwrap()
     
         
     @staticmethod
-    def wrap(data: object, container: object) -> CscWrapper: #, default_class = None) -> CscWrapper:
+    def wrap(data: object, creator: object) -> CscWrapper: #, default_class = None) -> CscWrapper:
         """Takes the data and returns an instance of CscWrapper
         
         Args:
             data: The data to wrap
-            container: The owner of the data. None is a valid value.
+            creator: The owner of the data. None is a valid value.
         """
         if hasattr(data, 'is_null'):
             if data.is_null():
@@ -150,6 +165,8 @@ class CscWrapper(object):
             csc.model.ModelViewer: ModelViewer,
             csc.model.DataViewer: DataViewer,
             csc.layers.Viewer: LayersViewer,
+            csc.update.ObjectGroup: SceneElement,
+            csc.update.Object: SceneElement,
         }
         
         mapping = None
@@ -157,78 +174,23 @@ class CscWrapper(object):
             mapping = class_mapping[data.__class__]
             #print('found mapping')
             
-        if mapping and mapping == PyGuid: #isinstance(mapping, PyGuid):
-            if isinstance(container, GuidMapper) and container.guid_class is not None:
-                mapping = container.guid_class
+        if mapping and mapping == PyGuid:
+            if isinstance(creator, GuidMapper) and creator.guid_class is not None:
+                mapping = creator.guid_class
                 
         if mapping is None:
             return data
         
         if isinstance(mapping, Property):
-            return mapping('', data, container)
+            return mapping('', data, creator)
         else:
-            return mapping(data, container)
-        
-        
-
-        ###guidIds are resolved first
-        ##if hasattr(data, 'is_null'):
-            ##if data.is_null():
-                ##return None
-            ##elif isinstance(data, csc.model.ObjectId):
-                ##return PyObject(data, container)
-            
-            ##elif isinstance(data, csc.model.DataId):
-                ##return DataProperty('', data, container)
-            
-            ##elif isinstance(data, csc.model.SettingId):
-                ##return SettingProperty('', data, container)
-            
-            ##elif isinstance(data, csc.Guid):
-                ##if isinstance(container, GuidMapper) and container.guid_class is not None:
-                    ##return container.guid_class(data, container)
-                ##else:
-                    ##return PyGuid(data, container)
-                
-            ##else:
-                ###can't wrap this with anything
-                ##print("Can't wrap:{}".format(data))
-                ##return data        
-        
-        ###if we don't have a guid let's see if this is another type of csc object.
-        ##elif isinstance(data, csc.view.Scene):
-            ##return PyScene(data, container)
-        
-        ##elif isinstance(data, csc.domain.Scene):
-            ##return DomainScene(data, container)
-        
-        ##elif isinstance(data, csc.model.BehaviourViewer):
-            ##return BehaviourViewer(data, container)
-        
-        ##elif isinstance(data, csc.model.ModelViewer):
-            ##return ModelViewer(data, container)
-        
-        ##elif isinstance(data, csc.model.DataViewer):
-            ##return DataViewer(data, container)
-        
-        ##elif isinstance(data, csc.layers.Viewer):
-            ##return LayersViewer(data, container)
-        
-        ##if isinstance(container, GuidMapper) and container.guid_class is not None:
-            ##return container.guid_class(data, container)
-        
-        ###elif default_class is not None:
-            ###return default_class(data, container)
-        
-        ##else:
-            ###can't wrap this with anything
-            ###print("Can't wrap:{}".format(data.__class__))
-            ##return data
+            return mapping(data, creator)
         
         
     @property
-    def container(self):
-        return self.__container
+    def creator(self):
+        """What object is respsonsible for this object's data"""
+        return self.__creator
     
     
     def replace_data(self, data):
@@ -237,6 +199,7 @@ class CscWrapper(object):
    
               
     def unwrap(self):
+        """Return the underlying data that's wrapped"""
         return self.__data
                        
                
@@ -250,40 +213,39 @@ class CscWrapper(object):
         
         if isinstance(result, list) or isinstance(result, tuple):
             return [CscWrapper.wrap(value, self) for value in result]
+        elif isinstance(result, set):
+            result_list = list(result)
+            return set([CscWrapper.wrap(value, self) for value in result_list])
         else:
             return CscWrapper.wrap(result, self)
 
 
 
-class SceneRoot(CscWrapper):
+class SceneElement(CscWrapper):
     """Base class used to represent any wrapped data existing/related to a scene
     
     Used to share global scene access between scene data-specific classes.
     The csc viewers and editors need to be instanced in context to the
-    current scene. Scene objects need these viewers and editors is commmon
-    among any datatypes.classes that represent data within a scene. This
-    class provides easy access of this data via the self.root member
-    variable.
+    current scene. Scene objects needing these viewers and editors is commmon
+    among any datatypes.classes that represent scene data.
     """
     
     def __init__(self, *args, **kwargs):
-        super(SceneRoot, self).__init__(*args, **kwargs)
+        super(SceneElement, self).__init__(*args, **kwargs)
         
-        self._root: PyScene = None
-        """Used to quickly access the PyScene that holds any sub-class data"""
+        self._scene: PyScene = None
         
-        if self.container is not None:
-            if isinstance(self.container, SceneRoot):
-                self._root = self.container.scene
+        if self.creator is not None:
+            if isinstance(self.creator, SceneElement):
+                self._scene = self.creator.scene
             else:
-                #I'm not sure if this case is ever valid, so we'll raise an error for now.
-                raise TypeError("{} is not an instance of SceneRoot".format(self.container))
+                raise TypeError("{} is not an instance of SceneElement".format(self.creator.__class__.__name__))
             
             
     @property
     def scene(self):
         """Returns the view.Scene"""
-        return self._root
+        return self._scene
     
     
     @property
@@ -291,7 +253,7 @@ class SceneRoot(CscWrapper):
         """Returns the domain.Scene"""
         #this property name is abbreviated to avoid conflicts with the csc
         #api function name domain_scene.        
-        return self._root.ds
+        return self._scene.ds
     
     @property
     def mod_viewer(self):
@@ -299,21 +261,26 @@ class SceneRoot(CscWrapper):
         #this property name is abbreviated to avoid conflicts with the csc
         #api function name model_viewer.
         
-        return self._root.mv
+        return self._scene.mv
     
     @property
     def beh_viewer(self):
         """Returns the BehaviourViewer"""
         #this property name is abbreviated to avoid conflicts with the csc
         #api function name behaviour_viewer.        
-        return self._root.bv
+        return self._scene.bv
     
     @property
     def dat_viewer(self):
         """Returns the DataViewer"""
         #this property name is abbreviated to avoid conflicts with the csc
         #api function name data_viewer.
-        return self._root.dv
+        return self._scene.dv
+    
+    @property
+    def lay_viewer(self):
+        """Returns the LayersViewer"""
+        return self._scene.lv
     
     @property
     def mod_editor(self):
@@ -321,7 +288,9 @@ class SceneRoot(CscWrapper):
         
         This will only be valid during the call to self.scene.edit()
         """
-        return self._root.me
+        if not self._scene.editing:
+            raise EditorError('Model Editor')
+        return self._scene.me
     
     @property
     def beh_editor(self):
@@ -329,7 +298,9 @@ class SceneRoot(CscWrapper):
         
         This will only be valid during the call to self.scene.edit()
         """
-        return self._root.be
+        if not self._scene.editing:
+            raise EditorError('Behaviour Editor') 
+        return self._scene.be
     
     @property
     def dat_editor(self):
@@ -337,7 +308,9 @@ class SceneRoot(CscWrapper):
         
         This will only be valid during the call to self.scene.edit()
         """
-        return self._root.de
+        if not self._scene.editing:
+            raise EditorError('Data Editor')
+        return self._scene.de
     
     @property
     def update_editor(self):
@@ -345,7 +318,9 @@ class SceneRoot(CscWrapper):
         
         This will only be valid during the call to self.scene.edit()
         """
-        return self._root.ue
+        if not self._scene.editing:
+            raise EditorError('Update Editor')        
+        return self._scene.ue
     
     @property
     def scene_updater(self):
@@ -353,43 +328,68 @@ class SceneRoot(CscWrapper):
         
         This will only be valid during the call to self.scene.edit()
         """
-        return self._root.su
+        if not self._scene.editing:
+            raise EditorError('Scene Editor')        
+        return self._scene.su
+    
+    @property
+    def session(self):
+        """Return the session associated with the current scene"""
+        if not self._scene.editing:
+            raise EditorError('Session')        
+        return self._scene.sess
 
     
     
     
-class PyScene(SceneRoot):
+class PyScene(SceneElement):
     """Represents a csc.view.Scene and all the scene's viewers and editors"""
     
     def __init__(self, *args, **kwargs):
         super(PyScene, self).__init__(*args, **kwargs)
-        self._root = self
+        self._scene = self
         self.ds = self.domain_scene()
         
         self.mv = self.ds.model_viewer()
         self.bv = self.ds.behaviour_viewer()
         self.dv = self.ds.data_viewer()
+        self.lv = self.ds.layers_viewer()
         
         self._editing = False
         self.me = None
         self.be = None
         self.de = None
+        self.le = None
+        
         self.ue = None
         self.se = None        
+        self.sess = None
         
         
-    def _start_editing(self, model_editor, update_editor, scene_updater):
+    @property
+    def editing(self):
+        return self._editing
+        
+    def _start_editing(self, model_editor,
+                       update_editor: csc.update.Update,
+                       scene_updater: csc.domain.SceneUpdater,
+                       session: csc.domain.Session
+                       ):
         self._editing = True
-        self.me = CscWrapper(model_editor, None)
-        self.ue = CscWrapper(update_editor, None)
-        self.su = CscWrapper(scene_updater, None)
-        self.be = CscWrapper(model_editor.behaviour_editor(), None)
-        self.de = CscWrapper(model_editor.data_editor(), None)
+        self.me = CscWrapper(model_editor, None) #model editor
+        self.ue = SceneElement(update_editor, self) #update editor
+        self.su = SceneElement(scene_updater, self) #scene updater
+        self.sess = SceneElement(session, self) #session
+        
+        self.be = CscWrapper(model_editor.behaviour_editor(), None) #behaviour editor
+        self.de = CscWrapper(model_editor.data_editor(), None) #data editor
+        self.le = CscWrapper(model_editor.layers_editor(), None) #layers editor
         
 
     def _stop_editing(self):
         self._editing = False
-        self.me = self.ue = self.su = self.be = self.de = None
+        self.me = self.be = self.de = self.le = None
+        self.ue = self.su = self.sess = None
         
         
     def edit(self, title: str, callback: typing.Callable, *callback_args, _low_level=True, **callback_kwargs):
@@ -403,30 +403,46 @@ class PyScene(SceneRoot):
         edit('making some changes', myFunc, param1, param2=True)
         Args:
             title: The title of the undo operation
-            callback: the function or method to run after the editors are
-            accessible
+            callback: the function/method to run after the editors are
+            initialized
         """
                 
-        def mod(model_editor, update_editor, scene_updater):
-            self._start_editing(model_editor, update_editor, scene_updater)
+        def mod(model_editor, update_editor, scene_updater, session):
+            self._start_editing(model_editor, update_editor, scene_updater, session)
             callback(*callback_args, **callback_kwargs)
             self._stop_editing()
-        
+    
         if self._editing:
             callback(*callback_args, **callback_kwargs)
         else:
             if _low_level:
                 self.dom_scene.warning("Scene edits should be made through PyScene.edit")
             
-            self.ds.modify_update(title, mod)
+            self.ds.modify_update_with_session(title, mod)
+
+                
+    @staticmethod
+    def _create_object(name, scene):
+        #This was a def inside of create_object, but it's crashing
+        #so I'm exprimenting with my options.
+        root_group = scene.update_editor.root()
+        root_group.create_object(name)        
             
+            
+    def create_object(self, name='') -> PyObject:
+        #def _create_object(name):
+            #root_group = self.update_editor.root()
+            #root_group.create_object(name)
+            
+        self.edit('Create Object', PyScene._create_object, name, self, _low_level=True)
+
             
     def get_animation_size(self):
         return self.dat_viewer.get_animation_size()
             
               
                   
-class PyGuid(SceneRoot):
+class PyGuid(SceneElement):
     """Base class for wrappping csc.Guid and all Ids"""
 
     def __init__(self, *args, **kwargs):
@@ -445,7 +461,6 @@ class PyObject(PyGuid):
         
         
     def __str__(self):
-        #return "{}->{} : {}-> {}".format(self.__class__.__name__, self.name, self.csc_handle.__class__.__name__, self.csc_handle.to_string())
         guid = ''
         if self.unwrap():
             guid = self.unwrap().to_string()
@@ -491,12 +506,12 @@ class PyObject(PyGuid):
         
 
     def get_behaviours(self) -> typing.List[PyBehaviour]:
-        """Returns a list of all the behaviours attached to the object"""
+        """Returns a flat list of all the behaviours attached to the object"""
         return self.beh_viewer.get_behaviours(self)
     
     
     def get_behaviours_by_name(self, behaviour_name) -> list:
-        """Returns a list of all the behaviours that match the input name"""
+        """Returns a list of all the behaviours that match the given name"""
         
         if self.has_behaviour(behaviour_name):
             return self._behaviours_cache[behaviour_name]
@@ -564,14 +579,17 @@ class PyBehaviour(PyGuid):
         
     @property
     def name(self):
-        """The name of the behaviour"""
+        """The name of the behaviour
+        
+        Dynamic behaviours will return the behaviourName property
+        """
         return self._get_dynamic_name()
 
             
     @property
     def object(self):
         """Returns the object the behaviour is a part of"""
-        return self.container
+        return self.creator
     
     
     def _get_dynamic_name(self):
@@ -687,7 +705,7 @@ class PyBehaviour(PyGuid):
         
         For Dynamic behaviours this will return 'Dynamic'. Rather than Using
         this method consider using PyBehaviour.name property if you want the
-        display name of Dynamic objects.
+        display name of a Dynamic behaviour.
         """
         return self.beh_viewer.get_behaviour_name(self)
         
@@ -812,7 +830,7 @@ class Property(PyGuid):
 
     @property
     def behaviour(self):
-        return self.container
+        return self.creator
     
    
   
@@ -823,7 +841,7 @@ class DataProperty(Property):
     def __init__(self, *args, **kwargs): #name: str, attr_type: AttrType, guid: csc.model.DataId, behaviour: PyBehaviour):
         super(DataProperty, self).__init__( *args, **kwargs) #name, attr_type, guid, behaviour)    
 
-        #TODO: will a data guid always safely return data?
+        #TODO: will a dataId always safely return data?
         try:
             self._data = self.dat_viewer.get_data(self)
         except:
@@ -902,7 +920,7 @@ class ObjectProperty(Property):
     def get(self) -> PyObject | typing.List[PyObject] | None:
         """returns the PyObject stored by the property
         
-        When is_range = True, a list of results is returned.        
+        When self.is_range() returns True, a list of results is returned.        
         """
         
         content = self.unwrap()
@@ -943,7 +961,7 @@ class ReferenceProperty(Property):
     def get(self) -> PyBehaviour | typing.List[PyBehaviour] | None:
         """returns the PyBehaviour stored by the property
         
-        When is_range = True, a list of results is returned.        
+        When self.is_range() returns True, a list of results is returned.       
         """
         
         content = self.unwrap()
@@ -956,7 +974,7 @@ class ReferenceProperty(Property):
 
 
 
-class GuidMapper(SceneRoot):
+class GuidMapper(SceneElement):
     """Used to wrap a generic csc.Guid to a specific class"""
     guid_class = None    
 
@@ -979,7 +997,6 @@ class DataViewer(GuidMapper):
 
 class DomainScene(GuidMapper):
     guid_class = None
-    
         
         
         
