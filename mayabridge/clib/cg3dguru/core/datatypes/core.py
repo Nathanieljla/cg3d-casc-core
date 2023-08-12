@@ -76,6 +76,7 @@ class CscWrapper(object):
         
         self.__data = data
         self.__container = container
+
         
         
     def __repr__(self):
@@ -127,64 +128,102 @@ class CscWrapper(object):
     
         
     @staticmethod
-    def wrap(data: object, container: object, default_class = None) -> CscWrapper:
+    def wrap(data: object, container: object) -> CscWrapper: #, default_class = None) -> CscWrapper:
         """Takes the data and returns an instance of CscWrapper
         
         Args:
             data: The data to wrap
             container: The owner of the data. None is a valid value.
         """
-        
-        #guidIds are resolved first
         if hasattr(data, 'is_null'):
             if data.is_null():
                 return None
-            elif isinstance(data, csc.model.ObjectId):
-                return PyObject(data, container)
             
-            elif isinstance(data, csc.model.DataId):
-                return DataProperty('', data, container)
+        class_mapping = {
+            csc.model.ObjectId: PyObject,
+            csc.model.DataId: DataProperty,
+            csc.model.SettingId: SettingProperty,
+            csc.Guid: PyGuid,
+            csc.view.Scene: PyScene,
+            csc.domain.Scene: DomainScene,
+            csc.model.BehaviourViewer: BehaviourViewer,
+            csc.model.ModelViewer: ModelViewer,
+            csc.model.DataViewer: DataViewer,
+            csc.layers.Viewer: LayersViewer,
+        }
+        
+        mapping = None
+        if data.__class__ in class_mapping:
+            mapping = class_mapping[data.__class__]
+            #print('found mapping')
             
-            elif isinstance(data, csc.model.SettingId):
-                return SettingProperty('', data, container)
-            
-            elif isinstance(data, csc.Guid):
-                if isinstance(container, GuidMapper) and container.guid_class is not None:
-                    return container.guid_class(data, container)
-                else:
-                    return PyGuid(data, container)
+        if mapping and mapping == PyGuid: #isinstance(mapping, PyGuid):
+            if isinstance(container, GuidMapper) and container.guid_class is not None:
+                mapping = container.guid_class
                 
-            else:
-                #can't wrap this with anything
-                print("Can't wrap:{}".format(data))
-                return data        
-        
-        #if we don't have a guid let's see if this is another type of csc object.
-        elif isinstance(data, csc.view.Scene):
-            return PyScene(data, container)
-        
-        elif isinstance(data, csc.domain.Scene):
-            return DomainScene(data, container)
-        
-        elif isinstance(data, csc.model.BehaviourViewer):
-            return BehaviourViewer(data, container)
-        
-        elif isinstance(data, csc.model.ModelViewer):
-            return ModelViewer(data, container)
-        
-        elif isinstance(data, csc.model.DataViewer):
-            return DataViewer(data, container)
-        
-        elif isinstance(data, csc.layers.Viewer):
-            return LayersViewer(data, container)
-        
-        elif default_class is not None:
-            return default_class(data, container)
-        
-        else:
-            #can't wrap this with anything
-            #print("Can't wrap:{}".format(data.__class__))
+        if mapping is None:
             return data
+        
+        if isinstance(mapping, Property):
+            return mapping('', data, container)
+        else:
+            return mapping(data, container)
+        
+        
+
+        ###guidIds are resolved first
+        ##if hasattr(data, 'is_null'):
+            ##if data.is_null():
+                ##return None
+            ##elif isinstance(data, csc.model.ObjectId):
+                ##return PyObject(data, container)
+            
+            ##elif isinstance(data, csc.model.DataId):
+                ##return DataProperty('', data, container)
+            
+            ##elif isinstance(data, csc.model.SettingId):
+                ##return SettingProperty('', data, container)
+            
+            ##elif isinstance(data, csc.Guid):
+                ##if isinstance(container, GuidMapper) and container.guid_class is not None:
+                    ##return container.guid_class(data, container)
+                ##else:
+                    ##return PyGuid(data, container)
+                
+            ##else:
+                ###can't wrap this with anything
+                ##print("Can't wrap:{}".format(data))
+                ##return data        
+        
+        ###if we don't have a guid let's see if this is another type of csc object.
+        ##elif isinstance(data, csc.view.Scene):
+            ##return PyScene(data, container)
+        
+        ##elif isinstance(data, csc.domain.Scene):
+            ##return DomainScene(data, container)
+        
+        ##elif isinstance(data, csc.model.BehaviourViewer):
+            ##return BehaviourViewer(data, container)
+        
+        ##elif isinstance(data, csc.model.ModelViewer):
+            ##return ModelViewer(data, container)
+        
+        ##elif isinstance(data, csc.model.DataViewer):
+            ##return DataViewer(data, container)
+        
+        ##elif isinstance(data, csc.layers.Viewer):
+            ##return LayersViewer(data, container)
+        
+        ##if isinstance(container, GuidMapper) and container.guid_class is not None:
+            ##return container.guid_class(data, container)
+        
+        ###elif default_class is not None:
+            ###return default_class(data, container)
+        
+        ##else:
+            ###can't wrap this with anything
+            ###print("Can't wrap:{}".format(data.__class__))
+            ##return data
         
         
     @property
@@ -353,29 +392,37 @@ class PyScene(SceneRoot):
         self.me = self.ue = self.su = self.be = self.de = None
         
         
-    def edit(self, title, func, *args, **kwargs):
-        """Provides access to the domain_scene.editors and updaters
+    def edit(self, title: str, callback: typing.Callable, *callback_args, _low_level=True, **callback_kwargs):
+        """Used to allow proper editing of scene content.
         
-        If an edit isn't in process then an undo operation is started else
-        the title is ignored and the input fuction is called. Any arguments
+        Provides access to the domain_scene.editors and updaters. If an edit
+        isn't in process then an undo operation is started. Any arguments
         that you need to pass into your func can be included when calling
         edit(). For Example:
         
-        edit('example', myFunc, param1, param2=True)
+        edit('making some changes', myFunc, param1, param2=True)
         Args:
-            title (str): The title of the undo operation
-            func: the function or method to run after the editors are accessible 
+            title: The title of the undo operation
+            callback: the function or method to run after the editors are
+            accessible
         """
-        
+                
         def mod(model_editor, update_editor, scene_updater):
             self._start_editing(model_editor, update_editor, scene_updater)
-            func(*args, **kwargs)
+            callback(*callback_args, **callback_kwargs)
             self._stop_editing()
         
         if self._editing:
-            func(*args, **kwargs)
+            callback(*callback_args, **callback_kwargs)
         else:
-            self.ds.modify_update(title, mod)            
+            if _low_level:
+                self.dom_scene.warning("Scene edits should be made through PyScene.edit")
+            
+            self.ds.modify_update(title, mod)
+            
+            
+    def get_animation_size(self):
+        return self.dat_viewer.get_animation_size()
             
               
                   
@@ -423,7 +470,7 @@ class PyObject(PyGuid):
             self.mod_editor.set_object_name(self, value)
         
         title = "Set name".format(value)
-        self.scene.edit(title, _set)
+        self.scene.edit(title, _set, _low_level=True)
         
         
     @property
@@ -443,7 +490,8 @@ class PyObject(PyGuid):
         self.Basic.parent.set(value)
         
 
-    def get_behaviours(self):
+    def get_behaviours(self) -> typing.List[PyBehaviour]:
+        """Returns a list of all the behaviours attached to the object"""
         return self.beh_viewer.get_behaviours(self)
     
     
@@ -484,7 +532,7 @@ class PyObject(PyGuid):
     def _cache_behaviours(self):
         self._behaviours_cache = {}
         
-        behaviours = self.beh_viewer.get_behaviours(self)
+        behaviours = self.get_behaviours() #beh_viewer.get_behaviours(self)
         for behaviour in behaviours:
             if behaviour.name in self._behaviours_cache:
                 self._behaviours_cache[behaviour.name].append(behaviour)
@@ -493,7 +541,7 @@ class PyObject(PyGuid):
 
             
     def has_behaviour(self, behaviour_name) -> bool:
-        """Returns true if a behaviour of the given name exists"""
+        """Returns True if a behaviour of the given name exists else False"""
         
         #If a requested behaviour is missing the internal behaviour cache is
         #rebuild before validating the missing data.
@@ -522,7 +570,7 @@ class PyBehaviour(PyGuid):
             
     @property
     def object(self):
-        """Returns the object the behaviour is attached to"""
+        """Returns the object the behaviour is a part of"""
         return self.container
     
     
@@ -540,7 +588,7 @@ class PyBehaviour(PyGuid):
         """Returns a tuple of the behaviour name and if the behaviour is dynamic
         
         When the behaviour is dynamic behaviour.behaviourName is returned
-        instead of 'Dynamic'
+        instead of 'Dynamic'.
         """
         
         name = b_viewer.get_behaviour_name(behaviour_id)
@@ -635,42 +683,84 @@ class PyBehaviour(PyGuid):
         
     
     def get_name(self) -> str:
+        """Returns the name of the behaviour
+        
+        For Dynamic behaviours this will return 'Dynamic'. Rather than Using
+        this method consider using PyBehaviour.name property if you want the
+        display name of Dynamic objects.
+        """
         return self.beh_viewer.get_behaviour_name(self)
         
     def get_owner(self) -> PyObject | None:
+        """Returns the object holds the current behaviour"""
         return self.beh_viewer.get_behaviour_owner(self)
 
-    def get_data(self, name):
+    def get_data(self, name) -> DataProperty:
+        """Returns a DataProperty instance for the given property name"""
         return self.beh_viewer.get_behaviour_data(self, name)
     
-    def get_data_range(self, name):
+    def get_data_range(self, name) -> DataProperty:
+        """Returns a DataProperty instance for the given property name
+        
+        DataProperty.is_range() will return True.
+        """
         return self.beh_viewer.get_behaviour_data_range(self, name)
     
     def get_setting(self, name):
+        """Returns a SettingProperty instance for the given property name"""
         return self.beh_viewer.get_behaviour_setting(self, name)
     
     def get_settings_range(self, name):
+        """Returns a SettingProperty instance for the given property name
+
+        DataProperty.is_range() will return True.        
+        """
         return self.beh_viewer.get_behaviour_settings_range(self, name)    
 
     def get_object(self, name) -> PyObject:
+        """Returns a ObjectProperty instance for the given property name"""
         return self.beh_viewer.get_behaviour_object(self, name)
     
     def get_objects_range(self, name) -> typing.List[PyObject]:
+        """Returns a ObjectProperty instance for the given property name
+        
+        DataProperty.is_range() will return True.            
+        """
         return self.beh_viewer.get_behaviour_objects_range(self, name)
         
     def get_reference(self, name) -> PyBehaviour:
+        """Returns a ReferenceProperty instance for the given property name"""
         return self.beh_viewer.get_behaviour_reference(self, name)
     
     def get_reference_range(self, name) -> typing.List[PyBehaviour]:
+        """Returns a ReferenceProperty instance for the given property name
+        
+        DataProperty.is_range() will return True.            
+        """
         return self.beh_viewer.get_behaviour_reference_range(self, name)
     
     def is_hidden(self) -> bool:
         return self.beh_viewer.is_hidden(self)
     
     def get_property_names(self):
+        """Returns a list of all the property names for this behaviour"""
         return self.beh_viewer.get_behaviour_property_names(self)
     
-    def get_property(self, name):
+    def get_property(self, name) -> DataProperty | ObjectProperty |\
+        ReferenceProperty | SettingProperty | None:
+        """Returns a property sub-class instance based on the property name
+        
+        This method will determine the correct getter method to call based on
+        the type content the property name represents.
+        
+        Returns:
+            DataProperty: For data properties
+            ObjectProperty: For properties that hold object references
+            ReferenceProperty: For propetries that hold behaviour references
+            SettingProperty: For setting properties
+            None: When a property by that name doesn't exist.        
+        """
+        
         property_names = self.get_property_names()
 
         try:
@@ -688,7 +778,7 @@ class PyLayer(PyGuid):
     
     
 class Property(PyGuid):
-    """Base class for any Behaviour attribute"""
+    """Base class for any Behaviour properties"""
     
     def __init__(self, name, *args, **kwargs):
         super(Property, self).__init__(*args, **kwargs)
@@ -735,13 +825,13 @@ class DataProperty(Property):
 
         #TODO: will a data guid always safely return data?
         try:
-            self.__data = self.dat_viewer.get_data(self) #.unwrap())
+            self._data = self.dat_viewer.get_data(self)
         except:
-            self.__data = None
+            self._data = None
             
     
     def is_animateable(self):
-        return self.__data is not None and self.__data.mode == csc.model.DataMode.Animation
+        return self._data is not None and self._data.mode == csc.model.DataMode.Animation
     
     
     def get(self, frame = -1):
@@ -754,6 +844,10 @@ class DataProperty(Property):
             return self.dat_viewer.get_data_value(self)
         
         
+    def get_default_value(self):
+        return self.dat_viewer.get_behaviour_default_data_value(self.behaviour, self.name)
+        
+        
     #def set(self, value):
         #if value is None:
             #value = PyObject(csc.model.ObjectId.null(), self.scene)        
@@ -762,7 +856,7 @@ class DataProperty(Property):
             #self.beh_editor.set_behaviour_field_value(self.behaviour, self.name, value)
         
         #title = "Set {}.{}".format(self.behaviour.name, self.name)
-        #self.scene.edit(title, _set)    
+        #self.scene.edit(title, _set)       
         
         
         
@@ -828,7 +922,7 @@ class ObjectProperty(Property):
             self.beh_editor.set_behaviour_model_object(self.behaviour, self.name, value)
         
         title = "Set {}.{}".format(self.behaviour.name, self.name)
-        self.scene.edit(title, _set)     
+        self.scene.edit(title, _set, _low_level=True)     
     
     
     
@@ -876,11 +970,11 @@ class BehaviourViewer(GuidMapper):
        
         
 class ModelViewer(GuidMapper):
-    guid_class = PyBehaviour
+    guid_class = None
           
         
 class DataViewer(GuidMapper):
-    guid_class = PyBehaviour
+    guid_class = None
         
 
 class DomainScene(GuidMapper):
