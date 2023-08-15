@@ -40,15 +40,7 @@ my_data = {'howard': 1,'bob': bool,}
 print(my_data)
 Test.replace_dict(my_data)
 print(my_data)
-#apple = Test()
-##shoe = Toot()
 
-##print(isinstance(shoe, Test))
-
-##name = 'name'
-
-##print(isinstance(name, Collection))
-
-
-#apple.bobby() #1, bob=True)
-#print("done")
+apple = Test()
+name = apple.bobby.__name__
+print(name)

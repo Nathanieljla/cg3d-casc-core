@@ -3,7 +3,7 @@ from __future__ import annotations #used so I don't have to forward declare clas
 # https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_google.html
 
 
-from enum import Enum
+from enum import Enum, Flag, auto
 import typing
 
 import csc
@@ -57,7 +57,7 @@ class BehaviourSizeError(Exception):
     
     def __init__(self, object_name, behaviour_name, message=''):
         if not message:
-            message = "{0}.{1} ERRORs, because more than one behaviour exists. Try {0}.get_behaviours('{1}')[0] instead.".format(object_name, behaviour_name)
+            message = "{0}.{1} ERRORs, because more than one behaviour exists. Try {0}.get_behaviours_by_name('{1}')[0] instead.".format(object_name, behaviour_name)
             
         super().__init__(message)
         
@@ -74,6 +74,22 @@ class PropertyError(Exception):
             message = "Can't find attribute named:{} in behaviour {}".format(attr_name, behaviour_name)
             
         super().__init__(message)
+
+
+
+#################
+####---Enums---
+#################
+class PropertyType(Flag):
+    RANGE = auto()
+    DATA = auto()
+    DATA_RANGE = DATA | RANGE
+    SETTING = auto()
+    SETTING_RANGE = SETTING | RANGE
+    REFERENCE = auto()
+    REFERENCE_RANGE = REFERENCE | RANGE
+    OBJECT = auto()
+    OBJECT_RANGE = OBJECT | RANGE
 
 
 
@@ -148,16 +164,18 @@ class CscWrapper(object):
         
         Args:
             data: The data to wrap
-            creator: The owner of the data. None is a valid value.
+            creator: The owner of the data. Use None if there is no creator.
         """
-        if hasattr(data, 'is_null'):
-            if data.is_null():
-                return None
+        
+        ##It seems like there's instances where we still want handles
+        ##null objects.
+        #if hasattr(data, 'is_null') and data.is_null():
+            #return None
             
         class_mapping = {
-            csc.model.ObjectId: PyObject,
-            csc.model.DataId: DataProperty,
-            csc.model.SettingId: SettingProperty,
+            csc.model.ObjectId: PyObjectId,
+            #csc.model.DataId: PyDataId, #DataProperty,
+            #csc.model.SettingId: PySettingId, #SettingProperty,
             csc.Guid: PyGuid,
             csc.view.Scene: PyScene,
             csc.domain.Scene: DomainScene,
@@ -166,7 +184,8 @@ class CscWrapper(object):
             csc.model.DataViewer: DataViewer,
             csc.layers.Viewer: LayersViewer,
             csc.update.ObjectGroup: SceneElement,
-            csc.update.Object: SceneElement,
+            csc.update.Object: PyObjectNode,
+            #csc.update.UpdateGroup: UpdateGroup,
         }
         
         mapping = None
@@ -180,11 +199,12 @@ class CscWrapper(object):
                 
         if mapping is None:
             return data
-        
-        if isinstance(mapping, Property):
-            return mapping('', data, creator)
-        else:
-            return mapping(data, creator)
+
+        return mapping(data, creator)        
+        #if isinstance(mapping, Property):
+            #return mapping('', data, creator)
+        #else:
+            #return mapping(data, creator)
         
         
     @property
@@ -208,8 +228,10 @@ class CscWrapper(object):
     
     
     def _wrap_result(self, result: object):
-        if hasattr(result, 'is_null') and result.is_null():
-            return None
+        ##It seems like there's instances where we still want handles
+        ##null objects.
+        #if hasattr(result, 'is_null') and result.is_null():
+            #return None
         
         if isinstance(result, list) or isinstance(result, tuple):
             return [CscWrapper.wrap(value, self) for value in result]
@@ -339,6 +361,12 @@ class SceneElement(CscWrapper):
             raise EditorError('Session')        
         return self._scene.sess
 
+
+    
+#def start_scene_edit(scene, callback, callback_args, callback_kwargs, model_editor, update_editor, scene_updater, session):
+    #scene._start_editing(model_editor, update_editor, scene_updater, session)
+    #callback(*callback_args, **callback_kwargs)
+    #scene._stop_editing()    
     
     
     
@@ -356,6 +384,7 @@ class PyScene(SceneElement):
         self.lv = self.ds.layers_viewer()
         
         self._editing = False
+        self._update_accessed = False
         self.me = None
         self.be = None
         self.de = None
@@ -376,71 +405,82 @@ class PyScene(SceneElement):
                        session: csc.domain.Session
                        ):
         self._editing = True
-        self.me = CscWrapper(model_editor, None) #model editor
-        self.ue = SceneElement(update_editor, self) #update editor
+        self._update_accessed = False
+        
+        self.me = SceneElement(model_editor, self) #model editor
+        self.ue = UpdateEditor(update_editor, self) #update editor
         self.su = SceneElement(scene_updater, self) #scene updater
         self.sess = SceneElement(session, self) #session
+
+        self.be = BehaviourEditor(model_editor.behaviour_editor(), self) #behaviour editor
+        self.de = SceneElement(model_editor.data_editor(), self) #data editor
+        self.le = LayersEditor(model_editor.layers_editor(), self) #layers editor
         
-        self.be = CscWrapper(model_editor.behaviour_editor(), None) #behaviour editor
-        self.de = CscWrapper(model_editor.data_editor(), None) #data editor
-        self.le = CscWrapper(model_editor.layers_editor(), None) #layers editor
+        
+    @SceneElement.update_editor.getter
+    def update_editor(self):
+        self._update_accessed = True
+        return super().update_editor
         
 
     def _stop_editing(self):
         self._editing = False
+        self._update_accessed = False
         self.me = self.be = self.de = self.le = None
         self.ue = self.su = self.sess = None
+          
         
-        
-    def edit(self, title: str, callback: typing.Callable, *callback_args, _low_level=True, **callback_kwargs):
+    def edit(self, title: str, callback: typing.Callable, *callback_args, _internal_edit=False, **callback_kwargs):
         """Used to allow proper editing of scene content.
         
         Provides access to the domain_scene.editors and updaters. If an edit
-        isn't in process then an undo operation is started. Any arguments
+        isn't in process then an modify operation is started. Any arguments
         that you need to pass into your func can be included when calling
         edit(). For Example:
         
         edit('making some changes', myFunc, param1, param2=True)
         Args:
-            title: The title of the undo operation
+            title: The title of the modify operation
             callback: the function/method to run after the editors are
             initialized
         """
-                
-        def mod(model_editor, update_editor, scene_updater, session):
-            self._start_editing(model_editor, update_editor, scene_updater, session)
-            callback(*callback_args, **callback_kwargs)
+        def _scene_edit(model_editor, update_editor, scene_updater, session):
+            self._start_editing(model_editor, update_editor, scene_updater, session)        
+            callback(*callback_args, **callback_kwargs)          
+            scene_updater.generate_update()
             self._stop_editing()
+            
+            
+        if not _internal_edit:
+            #external callbacks should have a handle to the PyScene so the editors can be accessed
+            callback_args = list(callback_args)
+            callback_args.insert(0, self)
     
         if self._editing:
             callback(*callback_args, **callback_kwargs)
         else:
-            if _low_level:
+            if _internal_edit:
                 self.dom_scene.warning("Scene edits should be made through PyScene.edit")
-            
-            self.ds.modify_update_with_session(title, mod)
+             
+            self.ds.modify_update_with_session(title, _scene_edit)
 
-                
-    @staticmethod
-    def _create_object(name, scene):
-        #This was a def inside of create_object, but it's crashing
-        #so I'm exprimenting with my options.
-        root_group = scene.update_editor.root()
-        root_group.create_object(name)        
             
+    def create_object(self, name='') -> PyObjectId:
+        new_object = None
+        
+        def _create_object(name):
+            nonlocal new_object
+            new_object = self.update_editor.create_object_node(name)
+
             
-    def create_object(self, name='') -> PyObject:
-        #def _create_object(name):
-            #root_group = self.update_editor.root()
-            #root_group.create_object(name)
-            
-        self.edit('Create Object', PyScene._create_object, name, self, _low_level=True)
+        self.edit('Create Object', _create_object, name, _internal_edit=True)
+        return new_object.object_id()
 
             
     def get_animation_size(self):
         return self.dat_viewer.get_animation_size()
-            
-              
+    
+         
                   
 class PyGuid(SceneElement):
     """Base class for wrappping csc.Guid and all Ids"""
@@ -449,9 +489,25 @@ class PyGuid(SceneElement):
         #call objects.__init__ so it plays nice with mixins
         super(PyGuid, self).__init__(*args, **kwargs)
         
+        
+        
+class PyObjectNode(SceneElement):
+    """Represents an object within the node graph"""
+    pass
+    #def object_id(self):
+        #return self.unwrap().object_id()
+        
 
 
-class PyObject(PyGuid):
+#class PyDataId(PyGuid):
+    #pass
+
+
+#class PySettingId(PyGuid):
+    #pass
+
+
+class PyObjectId(PyGuid):
     """Wrapper around ccs.model.ObjectId"""
 
     def __init__(self, *args, **kwargs):
@@ -485,7 +541,7 @@ class PyObject(PyGuid):
             self.mod_editor.set_object_name(self, value)
         
         title = "Set name".format(value)
-        self.scene.edit(title, _set, _low_level=True)
+        self.scene.edit(title, _set, _internal_edit=True)
         
         
     @property
@@ -503,13 +559,8 @@ class PyObject(PyGuid):
     @parent.setter
     def parent(self, value):
         self.Basic.parent.set(value)
-        
 
-    def get_behaviours(self) -> typing.List[PyBehaviour]:
-        """Returns a flat list of all the behaviours attached to the object"""
-        return self.beh_viewer.get_behaviours(self)
-    
-    
+
     def get_behaviours_by_name(self, behaviour_name) -> list:
         """Returns a list of all the behaviours that match the given name"""
         
@@ -559,13 +610,81 @@ class PyObject(PyGuid):
         """Returns True if a behaviour of the given name exists else False"""
         
         #If a requested behaviour is missing the internal behaviour cache is
-        #rebuild before validating the missing data.
-        
+        #rebuild to make sure the data is up to date.
         if behaviour_name not in self._behaviours_cache:
             self._cache_behaviours()
             
         return behaviour_name in self._behaviours_cache
  
+ 
+    def add_behaviour(self, name, dynamic_name=None):
+        add_dynamic = name == 'Dynamic'
+        output = None
+        def _add_behaviour():
+            nonlocal output
+            output = self.beh_editor.add_behaviour(self, name)
+            if add_dynamic:
+                name_prop = output.get_property('behaviourName')
+                name_prop.add_data('dynamic name', csc.model.DataMode.Static, dynamic_name)
+            
+        if add_dynamic and dynamic_name is None:
+            raise KeyError("add_behaviour optional arg 'dynamic_name' is missing.")
+            
+        self.scene.edit("Add Behaviour {}".format(name), _add_behaviour, _internal_edit=True)
+        return output
+    
+#---wrapped behaviour viewer functions----    
+
+    def get_behaviours(self) -> typing.List[PyBehaviour]:
+        """Returns a flat list of all the behaviours attached to the object"""
+        return self.beh_viewer.get_behaviours(self)
+
+    
+#---wrapped data editor functions
+    def add_data(self, data_name: str, mode: csc.model.DataMode, value, data_id=None, group_name: str=None) -> csc.model.Data:
+        """Wrapper DataEditor.add_data
+        
+        Args:
+            data_name:user readable name of the data
+            mode:Details of how the data will be stored
+            value:The default value of the data.
+            data_id (optional): an existing data_id to associate the data with. For testing/internal use.
+            group_name (optional): If a group_name is defined, then the data
+            will be added to a UpdateGroup of the given name. If the name
+            doesn't exist, then one will be made.
+            
+        Returns:
+            csc.model.Data            
+        """
+        result = None
+        def _object_add_data():
+            nonlocal result
+            if data_id:
+                result = self.dat_editor.add_data(self, data_name, mode, value, data_id)
+            else:
+                result = self.dat_editor.add_data(self, data_name, mode, value)
+                
+            if group_name:
+                update_group = self.update_editor.get_node_by_id(self)
+                print(update_group)
+                
+        self.scene.edit("Add data to {}".format(self.name), _object_add_data, _internal_edit=True)
+        return result
+    
+    
+    def add_setting(self, setting_name: str, mode: csc.model.SettingMode, value, setting_id=None) -> csc.model.Setting:
+        result = None
+        def _object_add_setting():
+            nonlocal result
+            if setting_id:
+                result = self.dat_editor.add_setting(self, setting_name, mode, value, setting_id)
+            else:
+                result = self.dat_editor.add_setting(self, setting_name, mode, value)
+                
+        self.scene.edit("Add setting to {}".format(self.name), _object_add_setting, _internal_edit=True)
+        return result
+        
+
 
 
 class PyBehaviour(PyGuid):
@@ -573,9 +692,14 @@ class PyBehaviour(PyGuid):
     
     def __init__(self, *args, **kwargs):
         super(PyBehaviour, self).__init__(*args, **kwargs)
-            
-        self._name, self.is_dynamic = self.get_behaviour_name(self, self.beh_viewer, self.dat_viewer)
-    
+        
+        self._property_types = {name:self._get_property_type(name) for name in self.get_property_names()}     
+        self._name = self.get_name()
+        self.is_dynamic = self._name == 'Dynamic'
+         
+        for key, value in self._property_types.items():
+            print("'{}.{}': {}".format(self._name, key, value))
+
         
     @property
     def name(self):
@@ -589,181 +713,173 @@ class PyBehaviour(PyGuid):
     @property
     def object(self):
         """Returns the object the behaviour is a part of"""
-        return self.creator
+        return self.get_owner()
     
     
     def _get_dynamic_name(self):
+        #Make sure force comes first, because this will be called
+        #before self.is_dynamic or self._name is defined.
         if not self.is_dynamic:
             return self._name
         else:
-            data_attr = self.get_data('behaviourName')
-            data_attr.name = 'behaviourName'
-            return self.dat_viewer.get_data_value(data_attr)
-    
-    
-    @staticmethod
-    def get_behaviour_name(behaviour_id: PyGuid, b_viewer: BehaviourViewer, d_viewer: DataViewer):
-        """Returns a tuple of the behaviour name and if the behaviour is dynamic
-        
-        When the behaviour is dynamic behaviour.behaviourName is returned
-        instead of 'Dynamic'.
-        """
-        
-        name = b_viewer.get_behaviour_name(behaviour_id)
-        
-        is_dynamic = name == 'Dynamic'
-        if is_dynamic:
-            data_attr = b_viewer.get_behaviour_data(behaviour_id, 'behaviourName')
-            data_attr.name = 'behaviourName'
-            name = d_viewer.get_data_value(data_attr)
+            data_prop = self.get_property('behaviourName')
+            #newly created behaviour's won't have a name assigned yet.
+            if data_prop.get() is None:
+                return ''
             
-        return (name, is_dynamic)
-    
-    
-    def _get_data(self, prop_name):
-        try:
-            #The CscWrapper returns a SettingProperty without the name
-            dat_attr = self.get_data(prop_name)
-            dat_attr.name = prop_name
-            return dat_attr
-        except:
-            try:
-                data_list = self.get_data_range(prop_name)
-                return DataProperty(prop_name, data_list, self)
-            except:
-                pass
+            data_prop.name = 'behaviourName'
+            return self.dat_viewer.get_data_value(data_prop)
+        
+    #def _get_data(self, prop_name):
+        #try:
+            ##The CscWrapper returns a SettingProperty without the name
+            #dat_attr = self.get_data(prop_name)
+            #dat_attr.name = prop_name
+            #return dat_attr
+        #except:
+            #try:
+                #data_list = self.get_data_range(prop_name)
+                #return DataProperty(prop_name, data_list, self)
+            #except:
+                #pass
                 
-        return None
+        #return None
         
 
-    def _get_setting(self, prop_name):
-        try:
-            #The CscWrapper returns a SettingProperty without the name
-            setting_attr = self.get_setting(prop_name)
-            setting_attr.name = prop_name
-            return setting_attr
-        except:
-            try:
-                settings_list = self.get_settings_range(prop_name)
-                return SettingProperty(prop_name, settings_list, self)
-            except:
-                pass
+    #def _get_setting(self, prop_name):
+        #try:
+            ##The CscWrapper returns a SettingProperty without the name
+            #setting_attr = self.get_setting(prop_name)
+            #setting_attr.name = prop_name
+            #return setting_attr
+        #except:
+            #try:
+                #settings_list = self.get_settings_range(prop_name)
+                #return SettingProperty(prop_name, settings_list, self)
+            #except:
+                #pass
         
-        return None          
+        #return None          
 
                 
-    def _get_object(self, prop_name):
-        try:
-            result_object = self.get_object(prop_name)
-            return ObjectProperty(prop_name, result_object, self)
-        except:
-            try:
-                object_list = self.get_objects_range(prop_name)
-                return ObjectProperty(prop_name, object_list, self)
-            except:
-                pass
+    #def _get_object(self, prop_name):
+        #try:
+            #result_object = self.get_object(prop_name)
+            #return ObjectProperty(prop_name, result_object, self)
+        #except:
+            #try:
+                #object_list = self.get_objects_range(prop_name)
+                #return ObjectProperty(prop_name, object_list, self)
+            #except:
+                #pass
                         
-        return None
+        #return None
         
         
-    def _get_reference(self, prop_name):
-        try:
-            result_ref = self.get_reference(prop_name)
-            return ReferenceProperty(prop_name, result_ref, self)
-        except:
-            try:
-                ref_list = self.get_reference_range(prop_name)
-                return ReferenceProperty(prop_name, ref_list, self)
-            except:
-                pass
+    #def _get_reference(self, prop_name):
+        #try:
+            #result_ref = self.get_reference(prop_name)
+            #return ReferenceProperty(prop_name, result_ref, self)
+        #except:
+            #try:
+                #ref_list = self.get_reference_range(prop_name)
+                #return ReferenceProperty(prop_name, ref_list, self)
+            #except:
+                #pass
                 
-        return None
+        #return None
         
+            
+    def _get_data(self, prop_name, is_range):
+        default = None
+        
+        if is_range:
+            default = DataProperty(prop_name, [], self)
+            value = self.get_data_range(prop_name)
+        else:
+            default = DataProperty(prop_name, None, self)
+            value = self.get_data(prop_name)
+    
+        if value is not None:
+            default = DataProperty(prop_name, value, self)
+                
+        return default  
+        
+        
+    def _get_setting(self, prop_name, is_range):
+        default = None
+        
+        if is_range:
+            default = SettingProperty(prop_name, [], self)
+            value = self.get_settings_range(prop_name)
+        else:
+            default = SettingProperty(prop_name, None, self)
+            value = self.get_setting(prop_name)
+            
+        if value is not None:
+            default = SettingProperty(prop_name, value, self)
+                
+        return default        
+              
+         
+    def _get_object(self, prop_name, is_range):
+        default = None
+        
+        if is_range:
+            default = ObjectProperty(prop_name, [], self)
+            value = self.get_objects_range(prop_name)
+        else:
+            default = ObjectProperty(prop_name, None, self)
+            value = self.get_object(prop_name)
+            
+        if value:
+            default = ObjectProperty(prop_name, value, self)
+
+        return default          
+                 
+        
+    def _get_reference(self, prop_name, is_range):
+        default = None
+        
+        if is_range:
+            default = ReferenceProperty(prop_name, [], self)
+            value = self.get_reference_range(prop_name)
+        else:
+            default = ReferenceProperty(prop_name, None, self)
+            value = self.get_reference(prop_name)
+            
+        if value:
+            default = ReferenceProperty(prop_name, value, self)
+                
+        return default
+            
             
     def __getattr__(self, attr):
-        result = self._get_data(attr)
-        if result:
-            return result
+        prop = self.get_property(attr)
+        if prop is None:
+            raise PropertyError(self.name, attr)
         
-        result = self._get_object(attr)
-        if result:
-            return result
+        return prop
         
-        result = self._get_reference(attr)
-        if result:
-            return result
+        #result = self._get_data(attr)
+        #if result:
+            #return result
         
-        result = self._get_setting(attr)
-        if result:
-            return result
+        #result = self._get_object(attr)
+        #if result:
+            #return result
         
-        raise PropertyError(self.name, attr) 
+        #result = self._get_reference(attr)
+        #if result:
+            #return result
         
-    
-    def get_name(self) -> str:
-        """Returns the name of the behaviour
+        #result = self._get_setting(attr)
+        #if result:
+            #return result
         
-        For Dynamic behaviours this will return 'Dynamic'. Rather than Using
-        this method consider using PyBehaviour.name property if you want the
-        display name of a Dynamic behaviour.
-        """
-        return self.beh_viewer.get_behaviour_name(self)
+        #raise PropertyError(self.name, attr) 
         
-    def get_owner(self) -> PyObject | None:
-        """Returns the object holds the current behaviour"""
-        return self.beh_viewer.get_behaviour_owner(self)
-
-    def get_data(self, name) -> DataProperty:
-        """Returns a DataProperty instance for the given property name"""
-        return self.beh_viewer.get_behaviour_data(self, name)
-    
-    def get_data_range(self, name) -> DataProperty:
-        """Returns a DataProperty instance for the given property name
         
-        DataProperty.is_range() will return True.
-        """
-        return self.beh_viewer.get_behaviour_data_range(self, name)
-    
-    def get_setting(self, name):
-        """Returns a SettingProperty instance for the given property name"""
-        return self.beh_viewer.get_behaviour_setting(self, name)
-    
-    def get_settings_range(self, name):
-        """Returns a SettingProperty instance for the given property name
-
-        DataProperty.is_range() will return True.        
-        """
-        return self.beh_viewer.get_behaviour_settings_range(self, name)    
-
-    def get_object(self, name) -> PyObject:
-        """Returns a ObjectProperty instance for the given property name"""
-        return self.beh_viewer.get_behaviour_object(self, name)
-    
-    def get_objects_range(self, name) -> typing.List[PyObject]:
-        """Returns a ObjectProperty instance for the given property name
-        
-        DataProperty.is_range() will return True.            
-        """
-        return self.beh_viewer.get_behaviour_objects_range(self, name)
-        
-    def get_reference(self, name) -> PyBehaviour:
-        """Returns a ReferenceProperty instance for the given property name"""
-        return self.beh_viewer.get_behaviour_reference(self, name)
-    
-    def get_reference_range(self, name) -> typing.List[PyBehaviour]:
-        """Returns a ReferenceProperty instance for the given property name
-        
-        DataProperty.is_range() will return True.            
-        """
-        return self.beh_viewer.get_behaviour_reference_range(self, name)
-    
-    def is_hidden(self) -> bool:
-        return self.beh_viewer.is_hidden(self)
-    
-    def get_property_names(self):
-        """Returns a list of all the property names for this behaviour"""
-        return self.beh_viewer.get_behaviour_property_names(self)
-    
     def get_property(self, name) -> DataProperty | ObjectProperty |\
         ReferenceProperty | SettingProperty | None:
         """Returns a property sub-class instance based on the property name
@@ -779,16 +895,235 @@ class PyBehaviour(PyGuid):
             None: When a property by that name doesn't exist.        
         """
         
-        property_names = self.get_property_names()
-
+        property_type = self.get_property_type(name)         
+        if property_type is None:
+            return None
+        
+        if PropertyType.DATA in property_type:
+            prop = self._get_data(name, PropertyType.RANGE in property_type)
+            
+        elif PropertyType.SETTING in property_type:
+            prop = self._get_setting(name, PropertyType.RANGE in property_type)
+            
+        elif PropertyType.REFERENCE in property_type:
+            prop = self._get_reference(name, PropertyType.RANGE in property_type)
+            
+        elif PropertyType.OBJECT in property_type:
+            prop = self._get_object(name, PropertyType.RANGE in property_type)
+        
+        return prop
+    
+    
+    def _get_property_type(self, name):
+        """Used to build the internal self._property_types mapping"""
         try:
-            idx = property_names.index(name)
-            return self.__getattr__(property_names[idx])
+            self.get_data(name)
+            return PropertyType.DATA
         except:
-            return None         
+            pass
+        
+        try:
+            self.get_data_range(name)
+            return PropertyType.DATA_RANGE
+        except:
+            pass
+        
+        try:
+            self.get_setting(name)
+            return PropertyType.SETTING
+        except:
+            pass
+        
+        try:
+            self.get_settings_range(name)
+            return PropertyType.SETTING_RANGE
+        except:
+            pass
+        
+        try:
+            self.get_object(name)
+            return PropertyType.OBJECT
+        except:
+            pass
+        
+        try:
+            self.get_objects_range(name)
+            return PropertyType.OBJECT_RANGE
+        except:
+            pass
+        
+        try:
+            self.get_reference(name)
+            return PropertyType.REFERENCE
+        except:
+            pass
+        
+        try:
+            self.get_reference_range(name)
+            return PropertyType.REFERENCE_RANGE
+        except:
+            pass
+        
+        raise PropertyError(self.name, name)
     
+        
     
+    def get_property_type(self, name) -> PropertyType | None:
+        """Return the type of data a behaviour property maps to"""
+        
+        if name not in self._property_types:
+            return None
+        
+        return self._property_types[name]
+        
+
+#----wrapped behaviour viewer functions----------------------        
+    def get_name(self) -> str:
+        """Returns the name of the behaviour
+        
+        For Dynamic behaviours this will return 'Dynamic'. Rather than Using
+        this method consider using PyBehaviour.name property if you want the
+        display name of a Dynamic behaviour.
+        """
+        return self.beh_viewer.get_behaviour_name(self)
+        
+    def get_owner(self) -> PyObjectId | None:
+        """Returns the object holds the current behaviour"""
+        return self.beh_viewer.get_behaviour_owner(self)
+
+    def get_data(self, name) -> csc.model.DatatId:
+        """Returns a csc.model.DatatId instance for the given property name"""
+        return self.beh_viewer.get_behaviour_data(self, name)
     
+    def get_data_range(self, name) -> typing.List[csc.model.DatatId]:
+        """Returns a csc.model.DatatId list for the given property name"""
+        return self.beh_viewer.get_behaviour_data_range(self, name)
+    
+    def get_setting(self, name) -> csc.model.SettingId:
+        """Returns a csc.model.SettingId instance for the given property name"""
+        return self.beh_viewer.get_behaviour_setting(self, name)
+    
+    def get_settings_range(self, name) -> typing.List[csc.model.SettingId]:
+        """Returns a csc.model.SettingId list for the given property name"""
+        return self.beh_viewer.get_behaviour_settings_range(self, name)    
+
+    def get_object(self, name) -> PyObjectId:
+        """Returns a PyObject instance for the given property name"""
+        return self.beh_viewer.get_behaviour_object(self, name)
+    
+    def get_objects_range(self, name) -> typing.List[PyObjectId]:
+        """Returns a ObjectProperty list for the given property name"""
+        return self.beh_viewer.get_behaviour_objects_range(self, name)
+        
+    def get_reference(self, name) -> PyBehaviour:
+        """Returns a PyBehaviour for the given property name"""
+        return self.beh_viewer.get_behaviour_reference(self, name)
+    
+    def get_reference_range(self, name) -> typing.List[PyBehaviour]:
+        """Returns a PyBehaviour list for the given property name"""
+        return self.beh_viewer.get_behaviour_reference_range(self, name)
+    
+    def is_hidden(self) -> bool:
+        return self.beh_viewer.is_hidden(self)
+    
+    def get_property_names(self):
+        """Returns a list of all the property names for this behaviour"""
+        return self.beh_viewer.get_behaviour_property_names(self)
+    
+#----wrapped behaviour editor functions----------------------
+    def _run_edit(self, func, *args, **kwargs):
+        result = None
+        def _behaviour_edit():
+            nonlocal result
+            result = func(*args, **kwargs)
+            
+        self.scene.edit(func.__name__, _behaviour_edit, _internal_edit=True)
+        return result
+
+    def add_data_to_range(self, prop_name, data_id):
+        func =  self.beh_editor.add_behaviour_data_to_range
+        return self._run_edit(func, self, prop_name, data_id)
+    
+    def add_model_object_to_range(self, prop_name, model_id):
+        func =  self.beh_editor.add_behaviour_model_object_to_range
+        return self._run_edit(func, self, prop_name, model_id)
+  
+    def add_reference_to_range(self, prop_name, ref_id):
+        func =  self.beh_editor.add_behaviour_reference_to_range
+        return self._run_edit(func, self, prop_name, ref_id)
+    
+    def add_setting_to_range(self, prop_name, setting_id):
+        func =  self.beh_editor.add_behaviour_setting_to_range
+        return self._run_edit(func, self, prop_name, setting_id)
+    
+    def delete_self(self):
+        func = self.beh_editor.delete_behaviour
+        return self._run_edit(func, self)
+        
+    def erase_data_from_range(self, prop_name, data_id):
+        func =  self.beh_editor.erase_behaviour_data_from_range
+        return self._run_edit(func, self, prop_name, data_id)
+    
+    def erase_model_object_from_range(self, prop_name, model_id):
+        func =  self.beh_editor.erase_behaviour_model_object_from_range
+        return self._run_edit(func, self, prop_name, model_id)
+  
+    def erase_reference_from_range(self, prop_name, ref_id):
+        func =  self.beh_editor.erase_behaviour_reference_from_range
+        return self._run_edit(func, self, prop_name, ref_id)
+    
+    def erase_setting_from_range(self, prop_name, setting_id):
+        func =  self.beh_editor.erase_behaviour_setting_from_range
+        return self._run_edit(func, self, prop_name, setting_id)
+    
+    def hide(self, hidden=True):
+        func =  self.beh_editor.hide_behaviour
+        return self._run_edit(func, self, hidden)
+    
+    def set_data(self, prop_name, data_id):
+        func =  self.beh_editor.set_behaviour_data
+        return self._run_edit(func, self, prop_name, data_id)
+    
+    def set_data_to_range(self, prop_name, inserted_ids: typing.List[csc.model.DataId]):
+        func =  self.beh_editor.set_behaviour_data_to_range
+        return self._run_edit(func, self, prop_name, inserted_ids) 
+    
+    def set_model_object(self, prop_name, model_id):
+        func =  self.beh_editor.set_behaviour_model_object
+        return self._run_edit(func, self, prop_name, model_id)
+    
+    def set_model_objects_to_range(self, prop_name, inserted_ids: typing.List[csc.model.ObjectId]):
+        func =  self.beh_editor.set_behaviour_model_objects_to_range
+        return self._run_edit(func, self, prop_name, inserted_ids)  
+  
+    def set_reference(self, prop_name, ref_id):
+        func =  self.beh_editor.set_behaviour_reference
+        return self._run_edit(func, self, prop_name, ref_id)
+    
+    def set_references_to_range(self, prop_name, inserted_ids: typing.List[csc.model.Guid]):
+        func =  self.beh_editor.set_behaviour_reference
+        return self._run_edit(func, self, prop_name, inserted_ids)
+    
+    def set_setting(self, prop_name, setting_id):
+        func =  self.beh_editor.set_behaviour_setting
+        return self._run_edit(func, self, prop_name, setting_id)
+    
+    def set_settings_to_range(self, prop_name, setting_id):
+        func =  self.beh_editor.set_behaviour_settings_to_range
+        return self._run_edit(func, self, prop_name, setting_id)
+    
+    def set_string(self, prop_name: str, value: str):
+        func =  self.beh_editor.set_behaviour_string
+        return self._run_edit(func, self, prop_name, value)
+    
+    def set_field_value(self, prop_name: str, value: str):
+        func = self.beh_editor.set_behaviour_field_value
+        return self._run_edit(func, self, prop_name, value)
+        
+        
+        
+        
+
 class PyLayer(PyGuid):
     def __init__(self, *args, **kwargs):
         super(PyLayer, self).__init__(*args, **kwargs)
@@ -829,23 +1164,34 @@ class Property(PyGuid):
         self._name = name
 
     @property
-    def behaviour(self):
+    def behaviour(self) -> PyBehaviour:
         return self.creator
+    
+    
+    def get_content(self):
+        content = self.unwrap()
+        if content is None or hasattr(content, 'is_null') and content.is_null():
+            return None
+        
+        return content
     
    
   
 class DataProperty(Property):
-    """Represents behaviour.properties that store csc.model.Data(s)"""
+    """Represents behaviour.properties that == csc.model.DataId(s)"""
 
+    def __init__(self, *args, **kwargs):
+        super(DataProperty, self).__init__( *args, **kwargs)   
+
+        self.__data = None
+        if self.get_content():
+            self.__data = self.dat_viewer.get_data(self)
     
-    def __init__(self, *args, **kwargs): #name: str, attr_type: AttrType, guid: csc.model.DataId, behaviour: PyBehaviour):
-        super(DataProperty, self).__init__( *args, **kwargs) #name, attr_type, guid, behaviour)    
-
-        #TODO: will a dataId always safely return data?
-        try:
-            self._data = self.dat_viewer.get_data(self)
-        except:
-            self._data = None
+        #try:
+            ##this will fail when we have null content
+            #self._data = self.dat_viewer.get_data(self)
+        #except:
+            #self._data = None
             
     
     def is_animateable(self):
@@ -853,7 +1199,11 @@ class DataProperty(Property):
     
     
     def get(self, frame = -1):
-        if self.is_animateable():
+        content = self.get_content()
+        if content is None:
+            return None            
+        
+        elif self.is_animateable():
             if frame < 0:
                 frame = self.domain_scene.get_current_frame()
                 
@@ -864,31 +1214,31 @@ class DataProperty(Property):
         
     def get_default_value(self):
         return self.dat_viewer.get_behaviour_default_data_value(self.behaviour, self.name)
-        
-        
-    #def set(self, value):
-        #if value is None:
-            #value = PyObject(csc.model.ObjectId.null(), self.scene)        
-
-        #def _set():
-            #self.beh_editor.set_behaviour_field_value(self.behaviour, self.name, value)
-        
-        #title = "Set {}.{}".format(self.behaviour.name, self.name)
-        #self.scene.edit(title, _set)       
+    
+    
+    def add_data(self, name: str, mode: csc.model.DataMode, value, data_id=None, group_name=None):
+        """Create a new csc.model.Data and assign it to the property"""
+        added = False
+        def _property_add_data():
+            nonlocal added
+            self._data = self.behaviour.object.add_data(name, mode, value, data_id=data_id, group_name=group_name)
+            self.replace_data(self._data.id)
+            added = self.behaviour.set_data(self.name, self)
+           
+        self.scene.edit("Add data to {}".format(self.name), _property_add_data, _internal_edit=True)
+        return added
         
         
         
 class SettingProperty(Property):
-    """Represents behaviour.properties that store csc.model.Settings(s)"""
+    """Represents behaviour.properties that == csc.model.SettingId(s)"""
     
     def __init__(self, *args, **kwargs):
         super(SettingProperty, self).__init__( *args, **kwargs)
         
-        #TODO: will a data guid always safely return data?
-        try:
-            self.__data = self.dat_viewer.get_setting(self) #.unwrap())
-        except:
-            self.__data = None
+        self.__data = None
+        if self.get_content():
+            self.__data = self.dat_viewer.get_data(self)
             
             
     def is_animateable(self):
@@ -896,7 +1246,11 @@ class SettingProperty(Property):
 
 
     def get(self, frame = -1):
-        if self.is_animateable():
+        content = self.get_content()
+        if content is None:
+            return None        
+        
+        elif self.is_animateable():
             if frame < 0:
                 frame = self.domain_scene.get_current_frame()
                 
@@ -914,33 +1268,33 @@ class ObjectProperty(Property):
 
 
     def __get(self, value):
-        return PyObject(value, self.scene)
+        return PyObjectId(value, self.scene)
 
 
-    def get(self) -> PyObject | typing.List[PyObject] | None:
+    def get(self) -> PyObjectId | typing.List[PyObjectId] | None:
         """returns the PyObject stored by the property
         
         When self.is_range() returns True, a list of results is returned.        
         """
         
-        content = self.unwrap()
+        content = self.get_content()
         if content is None:
-            return None
+            return None  
         elif isinstance(content, list):
             return [self.__get(value) for value in content]
         else:
             return self.__get(content)
         
 
-    def set(self, value: PyObject|None):
+    def set(self, value: PyObjectId|None):
         if value is None:
-            value = PyObject(csc.model.ObjectId.null(), self.scene)        
+            value = PyObjectId(csc.model.ObjectId.null(), self.scene)        
 
         def _set():
             self.beh_editor.set_behaviour_model_object(self.behaviour, self.name, value)
         
         title = "Set {}.{}".format(self.behaviour.name, self.name)
-        self.scene.edit(title, _set, _low_level=True)     
+        self.scene.edit(title, _set, _internal_edit=True)     
     
     
     
@@ -964,7 +1318,7 @@ class ReferenceProperty(Property):
         When self.is_range() returns True, a list of results is returned.       
         """
         
-        content = self.unwrap()
+        content = self.get_content()
         if content is None:
             return None
         elif isinstance(content, list):
@@ -982,11 +1336,19 @@ class GuidMapper(SceneElement):
 class LayersViewer(GuidMapper):
     guid_class = PyLayer
     
-        
+    
+class LayersEditor(GuidMapper):
+    guid_class = PyLayer
+    
+    
 class BehaviourViewer(GuidMapper):
     guid_class = PyBehaviour
+    
+    
+class BehaviourEditor(GuidMapper):
+    guid_class = PyBehaviour
        
-        
+           
 class ModelViewer(GuidMapper):
     guid_class = None
           
@@ -997,8 +1359,22 @@ class DataViewer(GuidMapper):
 
 class DomainScene(GuidMapper):
     guid_class = None
+    
+    
+class UpdateEditor(SceneElement):
+    def create_object_node(self, name) -> PyObjectNode:
+        root_group = self.update_editor.root()
+        new_object = root_group.create_object(name)
+        self.scene_updater.generate_update()
+        return new_object
+    
         
         
-        
-        
+if __name__ == '__main__':
+    pass
+
+    scene_manager = csc.app.get_application().get_scene_manager()
+    scene = scene_manager.current_scene()
+    current_scene: PyScene = PyScene.wrap(scene, None)
+    current_scene.create_object('MyObject')
     

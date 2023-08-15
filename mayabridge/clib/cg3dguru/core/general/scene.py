@@ -28,7 +28,7 @@ def get_current_scene() -> cg3dguru.core.datatypes.PyScene:
 
 
 
-def get_scene_objects(names = [], selected = False, of_type = '') -> typing.List[cg3dguru.core.datatypes.PyObject]:
+def get_scene_objects(names = [], selected = False, of_type = '') -> typing.List[cg3dguru.core.datatypes.PyObjectId]:
     def _get_by_name(model_viewer, names):
         found_guids = []
         if names:
