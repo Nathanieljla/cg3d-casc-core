@@ -617,7 +617,7 @@ class PyObjectId(PyGuid):
         return behaviour_name in self._behaviours_cache
  
  
-    def add_behaviour(self, name, dynamic_name=None):
+    def add_behaviour(self, name, dynamic_name=None, group_name=None):
         add_dynamic = name == 'Dynamic'
         output = None
         def _add_behaviour():
@@ -625,7 +625,7 @@ class PyObjectId(PyGuid):
             output = self.beh_editor.add_behaviour(self, name)
             if add_dynamic:
                 name_prop = output.get_property('behaviourName')
-                name_prop.add_data('dynamic name', csc.model.DataMode.Static, dynamic_name)
+                name_prop.add_data('dynamic name', csc.model.DataMode.Static, dynamic_name, group_name=group_name)
             
         if add_dynamic and dynamic_name is None:
             raise KeyError("add_behaviour optional arg 'dynamic_name' is missing.")
@@ -665,8 +665,23 @@ class PyObjectId(PyGuid):
                 result = self.dat_editor.add_data(self, data_name, mode, value)
                 
             if group_name:
-                update_group = self.update_editor.get_node_by_id(self)
-                print(update_group)
+                update_node = self.update_editor.get_node_by_id(self)
+                root_group = update_node.root_group()
+                target_group = None
+                if not root_group.has_node(group_name):
+                    target_group = root_group.create_sub_update_group(group_name)
+                    self.scene_updater.generate_update()
+                else:
+                    for node in root_group.nodes():
+                        if isinstance(node, csc.update.UpdateGroup) and node.name == group_name:
+                            target_group = node
+                            break
+                        
+                print(target_group)
+                        
+                
+                        
+                                      
                 
         self.scene.edit("Add data to {}".format(self.name), _object_add_data, _internal_edit=True)
         return result
@@ -1365,7 +1380,7 @@ class UpdateEditor(SceneElement):
     def create_object_node(self, name) -> PyObjectNode:
         root_group = self.update_editor.root()
         new_object = root_group.create_object(name)
-        self.scene_updater.generate_update()
+        #self.scene_updater.generate_update()
         return new_object
     
         

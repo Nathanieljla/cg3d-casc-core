@@ -12,23 +12,38 @@ def print_behavior_names(behaviour_viewer, guids):
         
         
         
-def node_network(scene, args, kwargs):
+def node_network(scene, *args, **kwargs):
     parent_object = None
     if args:
         parent_object = args[0]
-            
-    object_node = scene.update_editor.create_object_node('this')
-    new_object = object_node.object_id()
+        
+    print(parent_object)
+    if not parent_object:
+        return
+    
+    node = scene.update_editor.get_node_by_id(parent_object)
+    print(node)
+    root_group = node.root_group()
 
-    if parent_object:
-        new_object.parent = parent_object
+            
+    n1 = 'my_group'
+    n2 = 'my_group_child'
+    
+    print(root_group)
+
+            
+    #object_node = scene.update_editor.create_object_node('this')
+    #new_object = object_node.object_id()
+
+    #if parent_object:
+        #new_object.parent = parent_object
         
-    parent_group = object_node.parent_group()
-    for obj in parent_group.objects():
-        print(obj)
-        print(obj.name())
+    #parent_group = object_node.parent_group()
+    #for obj in parent_group.objects():
+        #print(obj)
+        #print(obj.name())
         
-    print(parent_group.is_root())
+    #print(parent_group.is_root())
     
     
     #object_node.add_input('new input')
@@ -52,7 +67,7 @@ def node_network(scene, args, kwargs):
   
 def dynamic_behaviour(scene):
     new_object = scene.create_object('MyObject')
-    behaviour = new_object.add_behaviour('Dynamic', 'My Class')
+    behaviour = new_object.add_behaviour('Dynamic', 'My Class', group_name='my_class_logic')
     behaviour_name = behaviour.behaviourName
     print(behaviour_name)
     
@@ -76,14 +91,14 @@ def run():
     
     
     
-    #objects = scene.get_scene_objects(names=['grand_parent'])
+    objects = scene.get_scene_objects(names=['grand_parent'])
     #if objects:
         #beh = objects[0].get_behaviours_by_name('Dynamic')
     
 
     network = False
     if network:
-        objects = scene.get_scene_objects(names=['parent'])
+        #objects = scene.get_scene_objects(names=['parent'])
         if objects:
             current_scene.edit("test", node_network, objects[0])
         else:
