@@ -3,8 +3,8 @@ def command_name():
 
 
 def run(scene):
-    import wingedcarrier.pigeons
+    import wingcarrier.pigeons
     
-    maya =  wingedcarrier.pigeons.MayaPigeon()
+    maya =  wingcarrier.pigeons.MayaPigeon()
     command = 'print("this worked"); print("Howard")'
     maya.send_python_command(command)

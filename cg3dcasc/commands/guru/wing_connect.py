@@ -7,7 +7,7 @@ def command_name():
 
 def run(scene):
     try:
-        import wingedcarrier.wingdbstub
-        wingedcarrier.wingdbstub.Ensure()
+        import wingcarrier.wingdbstub
+        wingcarrier.wingdbstub.Ensure()
     except:
         scene.error('Connection to wing failed.') 
