@@ -129,17 +129,36 @@ class CascadeurPigeon(Pigeon):
         #put this after writing the file, so the code is ready to execute one casc is opened
         exe_path = self.get_running_path()
         if not exe_path:
-            print('No instances of cascadeur are running')
+            print('No instance of cascadeur is running')
             return
 
+        ##old method
+        #if highlighted_text:
+            #self.write_temp_file(highlighted_text)
+        #else:
+            #command = u"import wingedcarrier.pigeons; wingedcarrier.pigeons.CascadeurPigeon.receive(\'{}\',\'{}\')".format(module_path, file_path)
+            #self.write_temp_file(command)
+            
+        #command = '{}&-run-script&{}'.format(exe_path, 'commands.guru.read_external_code')
+            
         if highlighted_text:
-            self.write_temp_file(highlighted_text)
+            command_string = highlighted_text
         else:
-            command = u"import wingedcarrier.pigeons; wingedcarrier.pigeons.CascadeurPigeon.receive(\'{}\',\'{}\')".format(module_path, file_path)
-            self.write_temp_file(command)
+            command_string = u"import wingedcarrier.pigeons; wingedcarrier.pigeons.CascadeurPigeon.receive(\'{}\',\'{}\')".format(module_path, file_path)
     
-        command = '{}&-run-script&{}'.format(exe_path, 'commands.guru.read_external_code')
+        command = '{}&--run-python-code&{}'.format(exe_path, command_string)
         CascadeurPigeon.run_shell_command(command.split('&'))
+        
+        
+    
+    def send_python_command(self, command_string):
+        exe_path = self.get_running_path()
+        if not exe_path:
+            print('No instance of cascadeur is running')
+            return
+        
+        command = '{}&--run-python-code&{}'.format(exe_path, command_string)
+        CascadeurPigeon.run_shell_command(command.split('&'))        
 
 
 
