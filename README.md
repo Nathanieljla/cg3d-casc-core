@@ -1,2 +1,1 @@
-# maya-to-cascadeur
-Easily import/export animations between Maya and Cascadeur
+# Wrapper around Cascadeur API
