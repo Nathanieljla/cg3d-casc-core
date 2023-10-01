@@ -9,7 +9,7 @@ authors = [
   { name="Nathaniel A", email="developer@3dcg.guru" },
 ]
 
-description = "A collection of Maya functions and classes that can easily be pulled into other projects/modules"
+description = "A collection of classes and functions to simplify working with the Cascadeur API"
 readme = "README.md"
 requires-python = ">=3.4"
 classifiers = [
