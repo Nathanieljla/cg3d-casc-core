@@ -3,9 +3,9 @@ import typing
 
 import csc
 
-import cg3dguru.core.datatypes
+import cg3dguru.datatypes
 
-def new_scene() -> cg3dguru.core.datatypes.PyScene:
+def new_scene() -> cg3dguru.datatypes.PyScene:
     """Creates a new scene and makes it the active scene
     
     Returns:
@@ -15,16 +15,16 @@ def new_scene() -> cg3dguru.core.datatypes.PyScene:
     application_scene = scene_manager.create_application_scene()
     scene_manager.set_current_scene(application_scene)
     
-    return cg3dguru.core.datatypes.PyScene.wrap(application_scene, None)
+    return cg3dguru.datatypes.PyScene.wrap(application_scene, None)
 
 
 
-def get_current_scene() -> cg3dguru.core.datatypes.PyScene:
+def get_current_scene() -> cg3dguru.datatypes.PyScene:
     """Get the current scene"""
     scene_manager = csc.app.get_application().get_scene_manager()
     scene = scene_manager.current_scene()
     
-    return cg3dguru.core.datatypes.PyScene.wrap(scene, None)
+    return cg3dguru.datatypes.PyScene.wrap(scene, None)
 
 
 
