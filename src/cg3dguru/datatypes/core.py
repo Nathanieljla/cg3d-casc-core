@@ -1233,10 +1233,18 @@ class DataProperty(Property):
             raise (Exception("{}.{} has no data assigned").format(self.behaviour.name, self.name))
         
         self.dat_viewer.get_data(data_id).mode == csc.model.DataMode.Animation
+        
+        
+    def _get_id(self):
+        data_id = self.unwrap()
+        if data_id is None:
+            data_id = self.behaviour.get_data(self.name)
+            
+        return data_id
 
              
     def is_animateable(self):
-        data_id = self.behaviour.get_data(self.name)
+        data_id = self._get_id()
         return self._is_animateable(data_id)
         #return self.__data is not None and self.__data.mode == csc.model.DataMode.Animation
     
@@ -1244,11 +1252,7 @@ class DataProperty(Property):
     def get(self, frame = None):
         """Return the value of the data block"""
         
-        #unwrap will be valid when the DataProperty was created from a DataRange
-        data_id = self.unwrap()
-        if data_id is None:
-            data_id = self.behaviour.get_data(self.name)
-            
+        data_id = self._get_id()
         if data_id is None:
             return None            
         
@@ -1262,7 +1266,8 @@ class DataProperty(Property):
         
         
     def set(self, value, frame=None, frames=None):
-        data_id = self.behaviour.get_data(self.name)
+        #unwrap will be valid when the DataProperty was created from a DataRange
+        data_id = self._get_id()
         if data_id is None:
             return            
         
@@ -1272,12 +1277,12 @@ class DataProperty(Property):
                     frame = self.domain_scene.get_current_frame()
                     
                 if frame:
-                    self.dat_viewer.set_data_value (data_id, frame, value)
+                    self.dat_editor.set_data_value (data_id, frame, value)
                 else:
-                    self.dat_viewer.set_data_value(data_id, frames, value)
+                    self.dat_editor.set_data_value(data_id, frames, value)
             else:
-                self.dat_viewer.set_data_value(data_id, value)
-                
+                self.dat_editor.set_data_value(data_id, value)
+            
         self.scene.edit('Set Data', _set_data, _internal_edit=True)
         
         
@@ -1308,20 +1313,25 @@ class SettingProperty(Property):
             raise (Exception("{}.{} has no settings data assigned").format(self.behaviour.name, self.name))
         
         self.dat_viewer.get_setting(setting_id).mode == csc.model.SettingMode.Animation
-  
-  
-    def is_animateable(self):
-        data_id = self.behaviour.get_setting(self.name)
-        return self._is_animateable(data_id)          
-            
-
-    def get(self, frame = None):
+        
+        
+    def _get_id(self):
         #unwrap will be valid when the SettingProperty was created from a
         #SettingRange
         setting_id = self.unwrap()
         if setting_id is None:
             setting_id = self.behaviour.get_setting(self.name)
             
+        return setting_id
+  
+  
+    def is_animateable(self):
+        setting_id = self._get_id()
+        return self._is_animateable(setting_id)          
+            
+
+    def get(self, frame = None):
+        setting_id = self._get_id()
         if setting_id is None:
             return None        
         
@@ -1335,7 +1345,7 @@ class SettingProperty(Property):
         
         
     def set(self, value, frame=None, frames=typing.Set[int] | None):
-        setting_id = self.behaviour.get_setting(self.name)
+        setting_id = self._get_id()
         if setting_id is None:
             return            
         
@@ -1345,11 +1355,11 @@ class SettingProperty(Property):
                     frame = self.domain_scene.get_current_frame()
                     
                 if frame:
-                    self.dat_viewer.set_setting_value(setting_id, frame, value)
+                    self.dat_editor.set_setting_value(setting_id, frame, value)
                 else:
-                    self.dat_viewer.set_setting_value(setting_id, frames, value)
+                    self.dat_editor.set_setting_value(setting_id, frames, value)
             else:
-                self.dat_viewer.set_setting_value(setting_id, value)
+                self.dat_editor.set_setting_value(setting_id, value)
                 
         self.scene.edit('Set Setting', _set_setting, _internal_edit=True)
         
