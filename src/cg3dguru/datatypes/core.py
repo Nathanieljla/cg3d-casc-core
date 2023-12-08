@@ -1232,7 +1232,7 @@ class DataProperty(Property):
         if data_id is None:
             raise (Exception("{}.{} has no data assigned").format(self.behaviour.name, self.name))
         
-        self.dat_viewer.get_data(data_id).mode == csc.model.DataMode.Animation
+        return self.dat_viewer.get_data(data_id).mode == csc.model.DataMode.Animation
         
         
     def _get_id(self):
@@ -1312,7 +1312,7 @@ class SettingProperty(Property):
         if setting_id is None:
             raise (Exception("{}.{} has no settings data assigned").format(self.behaviour.name, self.name))
         
-        self.dat_viewer.get_setting(setting_id).mode == csc.model.SettingMode.Animation
+        return self.dat_viewer.get_setting(setting_id).mode == csc.model.SettingMode.Animation
         
         
     def _get_id(self):
