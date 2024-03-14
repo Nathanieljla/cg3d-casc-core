@@ -2,11 +2,12 @@ from __future__ import annotations #used so I don't have to forward declare clas
 
 # https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_google.html
 
-
 from enum import Enum, Flag, auto
 import typing
 
 import csc
+
+_GIT_COUNT = int(csc.SystemVariables.git_count())
 
 
 ################
@@ -45,14 +46,13 @@ class BehaviourError(Exception):
         
         
 class BehaviourSizeError(Exception):
-    """Thrown when a only one behaviour of a given type should exist
+    """Thrown when only one behaviour of a given type should exist
     
     If code uses the shorthand of object.behaviour_name and more than one
     behaviour of the given name exists, this error will be thrown.
     
-    In these cases code should probably be refactored to call
-    object.get_behaviours_by_name(behaviour_name) instead. This programmers
-    users to examine and determine the right instance to use.
+    In these cases code should be refactored to call
+    object.get_behaviours_by_name(behaviour_name) instead.
     """
     
     def __init__(self, object_name, behaviour_name, message=''):
@@ -60,6 +60,27 @@ class BehaviourSizeError(Exception):
             message = "{0}.{1} ERRORs, because more than one behaviour exists. Try {0}.get_behaviours_by_name('{1}')[0] instead.".format(object_name, behaviour_name)
             
         super().__init__(message)
+        
+        
+        
+#class PropertyTypeError(Exception):
+    #"""Thrown when the csc api is out of sync with this wrapper"""
+  
+    #def __init__(self, behaviour_name, property_name, property_type, message=''):
+        #if not message:
+            #message = f"cant get property type for {behaviour_name}.{property_name} found as {property_type}"
+            
+        #super().__init__(message)    
+    #prop = None
+    
+    
+class MissingGroupError(Exception):
+                #raise PropertyTypeError(self._name, name, property_type)
+    def __init__(self, group_name, message=''):
+        if not message:
+            message = f"Can't create Update Group: {group_name}"
+            
+        super().__init__(message)    
         
         
         
@@ -99,9 +120,9 @@ class PropertyType(Flag):
 #################
 ####---Classes---
 #################
-
-
 class CscWrapper(object):
+    _class_wrappers = None
+    
     def __init__(self, data, creator, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
@@ -113,7 +134,11 @@ class CscWrapper(object):
 
          
     def __repr__(self):
-        return "{}: {}".format(self.__class__.__name__, self.__data.__class__.__name__)
+        return f"Wrapped {self.__data.__class__}" #.format(self.__class__.__name__, self.__data.__class__.__name__)
+    
+
+    def __str__(self):
+        return f"{self.__class__.__name__} wraps {self.__data.__class__.__name__} class {self.__data.__class__}"
 
     
     def __eq__(self, other):
@@ -127,6 +152,10 @@ class CscWrapper(object):
         return self.__data.__hash__()
     
     
+    def __call__(self, *args, **kwargs):
+        return self.__data(*args, **kwargs)
+    
+    
     def __getattr__(self, attr):
         if hasattr(self.__data, attr):            
             def func_wrapper(*args, **kwargs):
@@ -135,9 +164,9 @@ class CscWrapper(object):
                 
                 func = getattr(self.__data, attr)
                 result = func(*args, **kwargs)
+
                 return self._wrap_result(result)
                 
-            
             if not callable(getattr(self.__data.__class__, attr)):
                 #This must be a property, so let's return the wrapped results
                 return self._wrap_result(getattr(self.__data, attr))
@@ -180,71 +209,110 @@ class CscWrapper(object):
                 in_dict[key] = value.unwrap()
             elif isinstance(value, tuple) or isinstance(value, list) or isinstance(value, set):
                 in_dict[key] = CscWrapper.unwrap_list(value)
+
+           
+    @staticmethod
+    def get_class_wrappers():
+        if CscWrapper._class_wrappers is None:
+            CscWrapper._class_wrappers = {
+                csc.model.ObjectId: PyObject,
+                csc.Guid: PyGuid, 
+                csc.view.Scene: PyScene,
+                csc.domain.Scene: DomainScene,
+                csc.domain.Selector: SceneElement,
+                csc.domain.SelectionChanger: SceneElement,
+                csc.domain.Selection: SceneElement,
+                csc.model.BehaviourViewer: BehaviourViewer,
+                csc.model.ModelViewer: ModelViewer,
+                csc.model.DataViewer: DataViewer,
+                csc.layers.Viewer: LayersViewer,
+                csc.update.ObjectGroup: SceneElement,
+                csc.update.Object: PyUpdateObject,
+            }
+            
+            if _GIT_COUNT >= 33075:
+                CscWrapper._class_wrappers[csc.model.BehaviourId] = PyBehaviour
+                CscWrapper._class_wrappers[csc.domain.AssetId] = PyGuid
+            
+            
+        return CscWrapper._class_wrappers
     
         
     @staticmethod
-    def wrap(data: object, creator: object) -> CscWrapper: #, default_class = None) -> CscWrapper:
+    def wrap(data: object, creator: object) -> typing.Type[CscWrapper] | typing.Any | None: #, default_class = None) -> CscWrapper:
         """Takes the data and returns an instance of CscWrapper
-        
+                
         Args:
             data: The data to wrap
             creator: The owner of the data. Use None if there is no creator.
         """
-        
-        ##It seems like there's instances where we still want handles
-        ##null objects.
         if hasattr(data, 'is_null') and data.is_null():
             return None
-            
-        class_mapping = {
-            csc.model.ObjectId: PyObject,
-            csc.Guid: PyGuid,
-            csc.view.Scene: PyScene,
-            csc.domain.Scene: DomainScene,
-            csc.domain.Selector: SceneElement,
-            csc.domain.SelectionChanger: SceneElement,
-            csc.domain.Selection: SceneElement,
-            csc.model.BehaviourViewer: BehaviourViewer,
-            csc.model.ModelViewer: ModelViewer,
-            csc.model.DataViewer: DataViewer,
-            csc.layers.Viewer: LayersViewer,
-            csc.update.ObjectGroup: SceneElement,
-            csc.update.Object: PyUpdateObject,
-        }
         
-        mapping = None
-        if data.__class__ in class_mapping:
-            mapping = class_mapping[data.__class__]
+        class_wrappers = CscWrapper.get_class_wrappers()
+                    
+        wrapper = None
+        if data.__class__ in class_wrappers:
+            wrapper = class_wrappers[data.__class__]
             #print('found mapping')
             
-        if mapping and mapping == PyGuid:
+        if wrapper and wrapper == PyGuid:
             if isinstance(creator, GuidMapper) and creator.guid_class is not None:
-                mapping = creator.guid_class
-                
-        if mapping is None:
+                wrapper = creator.guid_class
+             
+        #I want this code, but right now it's breaking stuff.
+        #Specifically it doesn't play nice with DataId at a minimum
+        ###If we haven't found anything by now and this is csc class
+        ###we'll want a generic wrapper around it, so the getters and setters work
+        ###don't use __class__.__name__ here, because it might not contain the csc.
+        if not wrapper and str(data.__class__).startswith("<class 'csc."):
+            if isinstance(creator, SceneElement):
+                wrapper = SceneElement
+            else:
+                wrapper = CscWrapper
+            
+        #this must be a data that's not csc specific.
+        if wrapper is None:
             return data
 
-        return mapping(data, creator)        
-        #if isinstance(mapping, Property):
-            #return mapping('', data, creator)
-        #else:
-            #return mapping(data, creator)
+        #let's return the wrapped data
+        return wrapper(data, creator)        
+
         
         
     @property
     def creator(self):
-        """What object is respsonsible for this object's data"""
+        """What object is responsible for this object's data"""
         return self.__creator
     
-    
+
     def replace_data(self, data):
         """Directly replace the underlying content that is wrapped"""
+        while isinstance(data, CscWrapper):
+            data = data.unwrap()        
+        
         self.__data = data
    
               
     def unwrap(self):
         """Return the underlying data that's wrapped"""
+        
         return self.__data
+        
+        ###This shouldn't be a another wrapper, but wrapped model.DataId
+        ###is coming out this way and I haven' tracke down why.  Probably
+        ###due to how I'm handling all behaviour properties.
+        #output = self.__data
+        #while isinstance(output, CscWrapper):
+            #output = output.unwrap()
+        
+        #return output
+    
+    
+    @property
+    def handle(self):
+        """Direct access to the unwrapped csc data. An Alias for self.unwrap()"""
+        return self.unwrap()    
                        
                
     def _wrap(self, csc_handle):
@@ -252,6 +320,9 @@ class CscWrapper(object):
     
     
     def _wrap_result(self, result: object):
+        if result is None:
+            return None
+        
         if isinstance(result, list) or isinstance(result, tuple):
             return [CscWrapper.wrap(value, self) for value in result if value is not None]
         elif isinstance(result, set):
@@ -375,7 +446,10 @@ class SceneElement(CscWrapper):
     
     @property
     def session(self):
-        """Return the session associated with the current scene"""
+        """Return the session associated with the current scene
+        
+        This will only be valid during the call to self.scene.edit()
+        """
         if not self._scene.editing:
             raise EditorError('Session')        
         return self._scene.sess
@@ -403,7 +477,7 @@ class PyScene(SceneElement):
         self.le = None
         
         self.ue = None
-        self.se = None        
+        self.su = None        
         self.sess = None
         
         
@@ -446,7 +520,7 @@ class PyScene(SceneElement):
         """Used to allow proper editing of scene content.
         
         Provides access to the domain_scene.editors and updaters. If an edit
-        isn't in process then an modify operation is started. Any arguments
+        isn't in process then a modify operation is started. Any arguments
         that you need to pass into your func can be included when calling
         edit(). For Example:
         
@@ -474,7 +548,10 @@ class PyScene(SceneElement):
             if _internal_edit:
                 self.dom_scene.warning("Scene edits should be made through PyScene.edit")
              
+            #try:
             self.ds.modify_update_with_session(title, _scene_edit)
+            #except Exception as e:
+                #print(e)
             
         
     def select(self, to_select, *args, **kwargs):
@@ -491,18 +568,64 @@ class PyScene(SceneElement):
         """Creates a new scene object"""
         new_object = None
         
-        def _create_object(name):
+        def _create_object():
             nonlocal new_object
             new_object = self.update_editor.create_object_node(name)
 
             
-        self.edit('Create Object', _create_object, name, _internal_edit=True)
+        self.edit('Create Object', _create_object, _internal_edit=True)
         return new_object.object_id()
-
-            
-    def get_animation_size(self):
-        return self.dat_viewer.get_animation_size()
     
+    
+    def get_current_frame(self, clamp_to_animation =True):
+        return self.ds.get_current_frame(clamp_animation=clamp_to_animation)
+    
+    
+    def set_current_frame(self, frame):
+        def _set_current_frame():
+            self.ds.set_current_frame(frame)
+            
+        self.edit('Set Current Frame', _set_current_frame, _internal_edit=True)
+        
+      
+    def get_animation_size(self):
+        return self.dv.get_animation_size()
+    
+    
+    def select_frame_range(self, start_end: tuple[int, int]|None = None, clamp_to_animation=True):
+        """Select a time interval.  All layers will be selected.
+        
+        Args:
+            start_end: When no tuple is supplied the entire animation range
+            is selected
+            clamp_to_animation:When True the interval end won't extend past
+            the animation
+        """
+        
+        a_len = self.dv.get_animation_size() - 1
+        if start_end is None:
+            start_end = (0, a_len)
+            
+        if clamp_to_animation:
+            if start_end[0] > a_len:
+                start_end = (a_len, start_end[1])
+            if  start_end[1] > a_len:
+                start_end = (start_end[0], a_len)
+        
+        #this will crash Cascadeur        
+        if start_end[1] < start_end[0]:
+            start_end = (start_end[0], start_end[0])
+            
+        def _select_frame_range():     
+            layer_selector = self.session.take_layers_selector()
+        
+            l_s_with_ids = self.me.layers_selector()
+            selected_layer_ids = l_s_with_ids.all_included_layer_ids()
+            layer_selector.set_full_selection_by_parts(selected_layer_ids, *start_end)
+            
+        self.edit('Select frame range', _select_frame_range, _internal_edit=True)
+        
+
     
     def get_scene_objects(self, names = [], selected = False, of_type = '', only_roots = False) -> typing.List[PyObject]:
         """return a list of scene objects based on the input filters
@@ -735,7 +858,7 @@ class PyObject(PyGuid):
         if add_dynamic and dynamic_name is None:
             raise KeyError("add_behaviour optional arg 'dynamic_name' is missing.")
             
-        self.scene.edit("Add Behaviour {}".format(name), _add_behaviour, _internal_edit=True)
+        self.scene.edit(f"Add Behaviour {name}", _add_behaviour, _internal_edit=True)
         return output
     
 #---wrapped behaviour viewer functions----    
@@ -753,7 +876,8 @@ class PyObject(PyGuid):
             data_name:user readable name of the data
             mode:Details of how the data will be stored
             value:The default value of the data.
-            data_id (optional): an existing data_id to associate the data with. For testing/internal use.
+            data_id (optional): an existing data_id to associate the data
+            with. For testing/internal use.
             group_name (optional): If a group_name is defined, then the data
             will be added to a UpdateGroup of the given name. If the name
             doesn't exist, then one will be made.
@@ -779,7 +903,7 @@ class PyObject(PyGuid):
                     self.scene_updater.generate_update()
                 else:
                     for node in root_group.nodes():
-                        if isinstance(node, csc.update.UpdateGroup) and node.name() == group_name:
+                        if isinstance(node.handle, csc.update.UpdateGroup) and node.name() == group_name:
                             target_group = node
                             break
                         
@@ -787,8 +911,8 @@ class PyObject(PyGuid):
                     update_data = target_group.create_regular_data(data_name, value, mode)
                     result = self.dat_viewer.get_data(update_data.data_id())
                 else:
-                    print("couldn't find group. Object.create_data failed")
-                        
+                    raise MissingGroupError(group_name)
+             
                         
         self.scene.edit("Add data to {}".format(self.name), _object_add_data, _internal_edit=True)
         return result
@@ -933,8 +1057,11 @@ class PyBehaviour(PyGuid):
         elif PropertyType.BEH_STRING in property_type:
             prop = StringProperty(name, self)
         else:
-            #don't put self.name here, as that could loop on itself if the bad property drives the name
-            print("cant get property type for {}.{} found as {}".format(self._name, name, property_type))
+            #don't put self.name here, as that could loop on itself if the bad property drives the name            
+            #print("cant get property type for {}.{} found as {}".format(self._name, name, property_type))
+            
+            #don't raise an exepction here, obj.name will raise an expection.  Users and this package
+            #use this as a faster process than a try: or a new has_property()
             prop = None
             
         
@@ -1029,7 +1156,7 @@ class PyBehaviour(PyGuid):
         return self.beh_viewer.get_behaviour_name(self)
         
     def get_owner(self) -> PyObject | None:
-        """Returns the object holds the current behaviour"""
+        """Returns the object that holds the current behaviour"""
         return self.beh_viewer.get_behaviour_owner(self)
 
     def get_data(self, name) -> csc.model.DatatId:

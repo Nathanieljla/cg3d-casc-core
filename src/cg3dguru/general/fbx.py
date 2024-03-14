@@ -75,7 +75,10 @@ def export_fbx(file_path: str, export_filter: FbxFilterType):
     elif export_filter == FbxFilterType.MODEL:
         method = loader.export_model
     elif export_filter == FbxFilterType.SELECTED:
-        method = loader.export_scene_selected
+        if hasattr(loader, 'export_scene_selected_objects'):
+            method = loader.export_scene_selected_objects
+        else:
+            method = loader.export_scene_selected
     elif export_filter == FbxFilterType.ANIMATION:
         method = loader.export_joints
     else:
